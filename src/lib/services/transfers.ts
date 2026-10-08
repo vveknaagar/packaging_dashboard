@@ -1,0 +1,425 @@
+import { all, get, now, run, tx } from '../db';
+import { AppError, ForbiddenError, NotFoundError } from '../errors';
+import { canCreateTransfer, isDestUser, isSourceUser, isStore, isSuper, onBehalfNote } from '../permissions';
+import type { LocationRow, SessionUser, TransferDetail, TransferEvent, TransferLine, TransferRow, TransferStatus } from '../types';
+import { TRANSPORT_MODES } from '../transport';
+import { clean, parseQty } from '../util';
+import * as stock from './stock';
+
+export const STATUS_LABELS: Record<TransferStatus, string> = {
+  draft: 'Draft',
+  dispatched: 'Pending approval',
+  completed: 'Completed',
+  discrepancy: 'Received with Discrepancy',
+  rejected: 'Rejected',
+  cancelled: 'Cancelled',
+};
+
+export const EVENT_LABELS: Record<string, string> = {
+  created: 'Transfer created',
+  updated: 'Draft updated',
+  dispatched: 'Dispatched, waiting for approval',
+  received: 'Approved, received in full',
+  discrepancy: 'Approved with discrepancy',
+  rejected: 'Rejected by destination',
+  cancelled: 'Cancelled by source',
+};
+
+/** "2627" for the Indian financial year April 2026 to March 2027, using the date in India. */
+export function financialYearCode(date = new Date()): string {
+  const [year, month] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' })
+    .format(date).split('-').map(Number);
+  const start = month >= 4 ? year : year - 1;
+  return `${String(start % 100).padStart(2, '0')}${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
+/**
+ * The next number in the sending location's series for this financial year:
+ * its code, the year and a running count, e.g. SU2627-01. Each location and
+ * each year has its own series, starting at 01.
+ */
+function nextNumber(source: LocationRow): string {
+  const prefix = `${source.code.toUpperCase()}${financialYearCode()}`;
+  const last = get<{ n: number | null }>(
+    `SELECT MAX(CAST(substr(number, ?) AS INTEGER)) AS n FROM transfers
+     WHERE source_id = ? AND number LIKE ? || '-%'`, prefix.length + 2, source.id, prefix)!.n ?? 0;
+  return `${prefix}-${String(last + 1).padStart(2, '0')}`;
+}
+
+function cleanTransport(mode: unknown, ref: unknown) {
+  const transportMode = typeof mode === 'string' ? mode : '';
+  if (!(transportMode in TRANSPORT_MODES)) throw new AppError('Choose the mode of transport.');
+  return { transportMode, transportRef: clean(ref, 60) };
+}
+
+export interface RawLine {
+  itemId: number;
+  qty: unknown;
+}
+
+export function getTransfer(id: number): TransferDetail | undefined {
+  return get<TransferDetail>(
+    `SELECT t.*, s.name AS source_name, s.code AS source_code,
+            s.address AS source_address, s.gstin AS source_gstin,
+            (SELECT u.name FROM users u WHERE u.location_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS source_contact,
+            (SELECT u.phone FROM users u WHERE u.location_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS source_phone,
+            d.name AS dest_name, d.code AS dest_code,
+            d.address AS dest_address, d.gstin AS dest_gstin,
+            (SELECT u.name FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_contact,
+            (SELECT u.phone FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_phone,
+            cu.name AS created_by_name, du.name AS dispatched_by_name,
+            ru.name AS received_by_name, xu.name AS closed_by_name
+     FROM transfers t
+     JOIN locations s ON s.id = t.source_id
+     JOIN locations d ON d.id = t.dest_id
+     JOIN users cu ON cu.id = t.created_by
+     LEFT JOIN users du ON du.id = t.dispatched_by
+     LEFT JOIN users ru ON ru.id = t.received_by
+     LEFT JOIN users xu ON xu.id = t.closed_by
+     WHERE t.id = ?`, id);
+}
+
+export function getLines(transferId: number): TransferLine[] {
+  return all<TransferLine>(
+    `SELECT ti.id, ti.item_id, ti.qty_sent, ti.qty_received, ti.hsn, ti.rate_paise,
+            i.name, i.size, i.unit, i.thumb, i.image
+     FROM transfer_items ti JOIN items i ON i.id = ti.item_id
+     WHERE ti.transfer_id = ?
+     ORDER BY i.name, i.size`, transferId);
+}
+
+export interface ItemTransfer {
+  id: number;
+  number: string;
+  status: TransferStatus;
+  dispatched_at: string;
+  source_name: string;
+  dest_name: string;
+  qty_sent: number;
+  qty_received: number | null;
+}
+
+/**
+ * The dispatched transfers that carried one item, newest first. A Store Admin
+ * only gets the ones that left or reached their own store.
+ */
+export function itemTransfers(user: SessionUser, itemId: number, limit = 10): ItemTransfer[] {
+  const own = isStore(user) ? [user.location_id!, user.location_id!] : [];
+  return all<ItemTransfer>(
+    `SELECT t.id, t.number, t.status, t.dispatched_at, s.name AS source_name, d.name AS dest_name,
+            ti.qty_sent, ti.qty_received
+     FROM transfer_items ti
+     JOIN transfers t ON t.id = ti.transfer_id
+     JOIN locations s ON s.id = t.source_id
+     JOIN locations d ON d.id = t.dest_id
+     WHERE ti.item_id = ? AND t.dispatched_at IS NOT NULL
+       ${own.length ? 'AND (t.source_id = ? OR t.dest_id = ?)' : ''}
+     ORDER BY t.dispatched_at DESC, t.id DESC LIMIT ?`,
+    itemId, ...own, limit);
+}
+
+export interface PendingApproval {
+  id: number;
+  number: string;
+  dispatched_at: string;
+  source_name: string;
+  line_count: number;
+  units: number;
+}
+
+/**
+ * Dispatched transfers waiting for this user's location to check and approve,
+ * oldest first. Only a location's own admins approve; the Super Admin has no
+ * location, so this is empty for them unless they switch to a store user.
+ */
+export function pendingApprovals(user: SessionUser): PendingApproval[] {
+  if (!user.location_id) return [];
+  return all<PendingApproval>(
+    `SELECT t.id, t.number, t.dispatched_at, s.name AS source_name,
+            (SELECT COUNT(*) FROM transfer_items ti WHERE ti.transfer_id = t.id) AS line_count,
+            (SELECT COALESCE(SUM(qty_sent), 0) FROM transfer_items ti WHERE ti.transfer_id = t.id) AS units
+     FROM transfers t JOIN locations s ON s.id = t.source_id
+     WHERE t.dest_id = ? AND t.status = 'dispatched'
+     ORDER BY t.dispatched_at, t.id`, user.location_id);
+}
+
+export function getEvents(transferId: number): TransferEvent[] {
+  return all<TransferEvent>(
+    `SELECT e.*, u.name AS user_name
+     FROM transfer_events e JOIN users u ON u.id = e.user_id
+     WHERE e.transfer_id = ? ORDER BY e.id`, transferId);
+}
+
+function addEvent(transferId: number, user: SessionUser, event: string, detail = '') {
+  run('INSERT INTO transfer_events (transfer_id, user_id, ts, event, detail) VALUES (?, ?, ?, ?, ?)',
+    transferId, user.id, now(), event, `${detail} ${onBehalfNote(user)}`.trim());
+}
+
+function notify(userIds: number[], message: string, transferId: number, exceptUserId: number) {
+  const ts = now();
+  for (const userId of new Set(userIds)) {
+    if (userId !== exceptUserId) {
+      run('INSERT INTO notifications (user_id, ts, message, transfer_id) VALUES (?, ?, ?, ?)', userId, ts, message, transferId);
+    }
+  }
+}
+
+const usersAt = (locationId: number) =>
+  all<{ id: number }>('SELECT id FROM users WHERE active = 1 AND location_id = ?', locationId).map((u) => u.id);
+const warehouseAdmins = () =>
+  all<{ id: number }>("SELECT id FROM users WHERE active = 1 AND role = 'warehouse_admin'").map((u) => u.id);
+const locationName = (id: number) => get<{ name: string }>('SELECT name FROM locations WHERE id = ?', id)!.name;
+
+/** Turn submitted form lines into validated [{ itemId, qty }]. */
+function normaliseLines(sourceId: number, rawLines: RawLine[]) {
+  const lines: { itemId: number; qty: number }[] = [];
+  const seen = new Set<number>();
+  for (const raw of rawLines) {
+    const itemId = Number(raw.itemId);
+    const qty = parseQty(raw.qty);
+    if (qty === null) throw new AppError('Quantities must be whole numbers.');
+    if (qty === 0) continue;
+    if (seen.has(itemId)) throw new AppError('The same item was added twice.');
+    seen.add(itemId);
+    const item = get<{ id: number; name: string; size: string; active: number }>(
+      'SELECT id, name, size, active FROM items WHERE id = ?', itemId);
+    if (!item) throw new AppError('One of the selected items no longer exists.');
+    if (!item.active) throw new AppError(`${item.name} (${item.size}) is deactivated and cannot be transferred.`);
+    const available = stock.getQty(itemId, sourceId);
+    if (qty > available) {
+      throw new AppError(`${item.name} (${item.size}): only ${available} available, cannot send ${qty}.`);
+    }
+    lines.push({ itemId, qty });
+  }
+  if (!lines.length) throw new AppError('Add at least one item with a quantity greater than zero.');
+  return lines;
+}
+
+function checkRoute(user: SessionUser, sourceId: number | null, destId: number) {
+  if (!canCreateTransfer(user)) throw new ForbiddenError('You are not allowed to create transfers.');
+  const source = sourceId ? get<LocationRow>('SELECT * FROM locations WHERE id = ?', sourceId) : undefined;
+  if (!source) throw new AppError('Choose the location to send from.');
+  if (!source.active) throw new AppError(`${source.name} is inactive and cannot send transfers.`);
+  const dest = get<LocationRow>('SELECT * FROM locations WHERE id = ?', destId);
+  if (!dest || dest.type !== 'store') throw new AppError('Choose a destination store.');
+  if (!dest.active) throw new AppError(`${dest.name} is inactive and cannot receive transfers.`);
+  if (dest.id === source.id) throw new AppError('Source and destination must be different.');
+  return { source, dest };
+}
+
+function loadForAction(id: number): TransferRow {
+  const transfer = get<TransferRow>('SELECT * FROM transfers WHERE id = ?', id);
+  if (!transfer) throw new NotFoundError('Transfer not found.');
+  return transfer;
+}
+
+function dispatchInTx(transfer: TransferRow, user: SessionUser) {
+  const dest = get<LocationRow>('SELECT * FROM locations WHERE id = ?', transfer.dest_id)!;
+  if (!dest.active) throw new AppError(`${dest.name} is inactive and cannot receive transfers.`);
+  const lines = getLines(transfer.id);
+  if (!lines.length) throw new AppError('This transfer has no items.');
+  let units = 0;
+  for (const line of lines) {
+    // Throws (and rolls the whole dispatch back) if any line exceeds available stock.
+    stock.changeStock({
+      itemId: line.item_id,
+      locationId: transfer.source_id,
+      delta: -line.qty_sent,
+      type: 'transfer_out',
+      reason: `Dispatched on ${transfer.number} to ${dest.name}`,
+      userId: user.id,
+      transferId: transfer.id,
+    });
+    units += line.qty_sent;
+  }
+  // Freeze each item's HSN code and price on the line, so later price changes do not alter this slip.
+  run(`UPDATE transfer_items SET
+         hsn = (SELECT hsn FROM items WHERE items.id = transfer_items.item_id),
+         rate_paise = (SELECT price_paise FROM items WHERE items.id = transfer_items.item_id)
+       WHERE transfer_id = ?`, transfer.id);
+  run("UPDATE transfers SET status = 'dispatched', dispatched_by = ?, dispatched_at = ? WHERE id = ?", user.id, now(), transfer.id);
+  addEvent(transfer.id, user, 'dispatched', `${lines.length} item(s), ${units} unit(s) deducted from source and now in transit`);
+  notify(usersAt(transfer.dest_id),
+    `Incoming transfer ${transfer.number} from ${locationName(transfer.source_id)} is waiting for your approval. Check the items, then approve or reject it.`,
+    transfer.id, user.id);
+}
+
+interface SaveInput {
+  user: SessionUser;
+  /** Only the Super Admin chooses this. Everyone else always sends from their own location. */
+  sourceId?: number | null;
+  destId: number;
+  rawLines: RawLine[];
+  note: unknown;
+  /** A key of TRANSPORT_MODES. */
+  transportMode: unknown;
+  /** Vehicle, LR or docket number. Optional. */
+  transportRef: unknown;
+  dispatchNow: boolean;
+}
+
+/** Create a transfer from the user's own location (the Super Admin names one). Optionally dispatch it straight away. */
+export function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, dispatchNow }: SaveInput): number {
+  return tx(() => {
+    const { source, dest } = checkRoute(user, isSuper(user) ? sourceId ?? null : user.location_id, destId);
+    const lines = normaliseLines(source.id, rawLines);
+    const transport = cleanTransport(transportMode, transportRef);
+    const info = run(
+      `INSERT INTO transfers (number, source_id, dest_id, status, note, transport_mode, transport_ref, created_by, created_at)
+       VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?)`,
+      nextNumber(source), source.id, dest.id, clean(note, 500), transport.transportMode, transport.transportRef, user.id, now());
+    const id = Number(info.lastInsertRowid);
+    for (const line of lines) {
+      run('INSERT INTO transfer_items (transfer_id, item_id, qty_sent) VALUES (?, ?, ?)', id, line.itemId, line.qty);
+    }
+    addEvent(id, user, 'created', `${source.name} to ${dest.name}`);
+    if (dispatchNow) dispatchInTx(loadForAction(id), user);
+    return id;
+  });
+}
+
+/** Replace the destination, note and lines of a draft. */
+export function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, dispatchNow }: SaveInput & { id: number }): number {
+  return tx(() => {
+    const transfer = loadForAction(id);
+    if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can edit this transfer.');
+    if (transfer.status !== 'draft') throw new AppError('Only a draft can be edited.');
+    const { dest } = checkRoute(user, transfer.source_id, destId);
+    const lines = normaliseLines(transfer.source_id, rawLines);
+    const transport = cleanTransport(transportMode, transportRef);
+    run('UPDATE transfers SET dest_id = ?, note = ?, transport_mode = ?, transport_ref = ? WHERE id = ?',
+      dest.id, clean(note, 500), transport.transportMode, transport.transportRef, id);
+    run('DELETE FROM transfer_items WHERE transfer_id = ?', id);
+    for (const line of lines) {
+      run('INSERT INTO transfer_items (transfer_id, item_id, qty_sent) VALUES (?, ?, ?)', id, line.itemId, line.qty);
+    }
+    addEvent(id, user, 'updated');
+    if (dispatchNow) dispatchInTx(loadForAction(id), user);
+    return id;
+  });
+}
+
+export function dispatch({ user, id }: { user: SessionUser; id: number }): void {
+  tx(() => {
+    const transfer = loadForAction(id);
+    if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can dispatch this transfer.');
+    if (transfer.status !== 'draft') throw new AppError('This transfer has already been dispatched or closed.');
+    dispatchInTx(transfer, user);
+  });
+}
+
+interface ReceiveInput {
+  user: SessionUser;
+  id: number;
+  /** Quantity typed by the receiver for each transfer line id. */
+  received: Record<number, unknown>;
+  remark: unknown;
+}
+
+/**
+ * Destination confirms what physically arrived. Stock is added to the
+ * destination only here, and only for the received quantity.
+ */
+export function receive({ user, id, received, remark }: ReceiveInput): TransferStatus {
+  return tx(() => {
+    const transfer = loadForAction(id);
+    if (!isDestUser(user, transfer)) throw new ForbiddenError('Only the destination location can receive this transfer.');
+    if (transfer.status !== 'dispatched') throw new AppError('This transfer is not waiting to be received.');
+    const note = clean(remark, 500);
+    const lines = getLines(id);
+    const sourceName = locationName(transfer.source_id);
+    const destName = locationName(transfer.dest_id);
+    const differences: string[] = [];
+
+    for (const line of lines) {
+      const qty = parseQty(received[line.id]);
+      if (qty === null) throw new AppError(`Enter the received quantity for ${line.name} (${line.size}).`);
+      run('UPDATE transfer_items SET qty_received = ? WHERE id = ?', qty, line.id);
+      stock.changeStock({
+        itemId: line.item_id,
+        locationId: transfer.dest_id,
+        delta: qty,
+        type: 'transfer_in',
+        reason: `Received on ${transfer.number} from ${sourceName}`,
+        userId: user.id,
+        transferId: id,
+      });
+      if (qty !== line.qty_sent) differences.push(`${line.name} (${line.size}): sent ${line.qty_sent}, received ${qty}`);
+    }
+
+    const hasDiscrepancy = differences.length > 0;
+    if (hasDiscrepancy && !note) {
+      throw new AppError('Received quantities differ from what was sent. A remark explaining the difference is required.');
+    }
+    const status: TransferStatus = hasDiscrepancy ? 'discrepancy' : 'completed';
+    run('UPDATE transfers SET status = ?, received_by = ?, received_at = ?, receive_remark = ? WHERE id = ?',
+      status, user.id, now(), note, id);
+
+    if (hasDiscrepancy) {
+      addEvent(id, user, 'discrepancy', `${differences.join('; ')}. Remark: ${note}`);
+      notify([...warehouseAdmins(), ...usersAt(transfer.source_id)],
+        `Discrepancy on ${transfer.number} (${sourceName} to ${destName}): ${differences.length} item(s) differ. Remark: ${note}`,
+        id, user.id);
+    } else {
+      addEvent(id, user, 'received', note);
+      notify(usersAt(transfer.source_id), `${transfer.number} was received in full by ${destName}.`, id, user.id);
+    }
+    return status;
+  });
+}
+
+/** Put every dispatched line back into the source location. */
+function returnToSource(transfer: TransferRow, user: SessionUser, why: string) {
+  for (const line of getLines(transfer.id)) {
+    stock.changeStock({
+      itemId: line.item_id,
+      locationId: transfer.source_id,
+      delta: line.qty_sent,
+      type: 'transfer_return',
+      reason: `${why} (${transfer.number})`,
+      userId: user.id,
+      transferId: transfer.id,
+    });
+  }
+}
+
+export function reject({ user, id, reason }: { user: SessionUser; id: number; reason: unknown }): void {
+  tx(() => {
+    const transfer = loadForAction(id);
+    if (!isDestUser(user, transfer)) throw new ForbiddenError('Only the destination location can reject this transfer.');
+    if (transfer.status !== 'dispatched') throw new AppError('This transfer is not waiting to be received.');
+    const why = clean(reason, 500);
+    if (!why) throw new AppError('A reason is required to reject a transfer.');
+    returnToSource(transfer, user, 'Transfer rejected by destination');
+    run("UPDATE transfers SET status = 'rejected', closed_by = ?, closed_at = ?, closed_reason = ? WHERE id = ?",
+      user.id, now(), why, id);
+    addEvent(id, user, 'rejected', `Stock returned to source. Reason: ${why}`);
+    notify([...usersAt(transfer.source_id), ...warehouseAdmins()],
+      `${transfer.number} was rejected by ${locationName(transfer.dest_id)} and the stock has been returned. Reason: ${why}`,
+      id, user.id);
+  });
+}
+
+export function cancel({ user, id, reason }: { user: SessionUser; id: number; reason: unknown }): void {
+  tx(() => {
+    const transfer = loadForAction(id);
+    if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can cancel this transfer.');
+    if (transfer.status !== 'draft' && transfer.status !== 'dispatched') {
+      throw new AppError('This transfer can no longer be cancelled.');
+    }
+    const why = clean(reason, 500);
+    const wasDispatched = transfer.status === 'dispatched';
+    if (wasDispatched) {
+      if (!why) throw new AppError('A reason is required to cancel a dispatched transfer.');
+      returnToSource(transfer, user, 'Transfer cancelled by source');
+    }
+    run("UPDATE transfers SET status = 'cancelled', closed_by = ?, closed_at = ?, closed_reason = ? WHERE id = ?",
+      user.id, now(), why, id);
+    addEvent(id, user, 'cancelled',
+      [wasDispatched ? 'Stock returned to source.' : '', why ? `Reason: ${why}` : ''].filter(Boolean).join(' '));
+    if (wasDispatched) {
+      notify(usersAt(transfer.dest_id),
+        `${transfer.number} from ${locationName(transfer.source_id)} was cancelled before receipt.`, id, user.id);
+    }
+  });
+}

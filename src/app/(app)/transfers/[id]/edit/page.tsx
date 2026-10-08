@@ -1,0 +1,38 @@
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { TransferForm } from '@/components/TransferForm';
+import { PageHead } from '@/components/ui';
+import { isSourceUser, isSuper } from '@/lib/permissions';
+import { getLines, getTransfer } from '@/lib/services/transfers';
+import { requireUser } from '@/lib/session';
+import { destinationsFor, transferableItems } from '@/lib/transfer-form-data';
+import { parseId } from '@/lib/util';
+
+export const metadata: Metadata = { title: 'Edit draft transfer' };
+
+/** Only the source location can edit, and only while the transfer is still a draft. */
+export default async function EditTransferPage({ params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
+  const id = parseId((await params).id);
+  const transfer = id ? getTransfer(id) : undefined;
+  if (!transfer || !isSourceUser(user, transfer) || transfer.status !== 'draft') notFound();
+
+  const lines = getLines(transfer.id);
+  return (
+    <>
+      <PageHead title={`Edit draft ${transfer.number}`} sub={`From ${transfer.source_name}`} />
+      <TransferForm
+        sourceName={transfer.source_name}
+        stockLabel={isSuper(user) ? 'In stock' : undefined}
+        destinations={destinationsFor(transfer.source_id)}
+        items={transferableItems(transfer.source_id)}
+        transferId={transfer.id}
+        initialDestId={transfer.dest_id}
+        initialNote={transfer.note}
+        initialTransportMode={transfer.transport_mode}
+        initialTransportRef={transfer.transport_ref}
+        initialQty={Object.fromEntries(lines.map((l) => [l.item_id, l.qty_sent]))}
+      />
+    </>
+  );
+}
