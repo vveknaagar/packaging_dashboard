@@ -40,9 +40,17 @@ export const getUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
   const tokenHash = hashToken(token);
-  const session = await get<SessionRow>('SELECT user_id, acting_as, expires, created_at FROM sessions WHERE token_hash = ?', tokenHash);
-  // The session always belongs to the person who signed in, even while they act as someone else.
-  const owner = session ? await loadUser(session.user_id) : undefined;
+  // The session and its owner in one round trip. The session always belongs to the
+  // person who signed in, even while they act as someone else.
+  const session = await get<SessionRow & { owner: UserLookup | null }>(
+    `SELECT s.user_id, s.acting_as, s.expires, s.created_at,
+            (SELECT row_to_json(o) FROM (
+               SELECT u.id, u.name, u.username, u.role, u.location_id, u.active,
+                      l.name AS location_name, l.type AS location_type
+               FROM users u LEFT JOIN locations l ON l.id = u.location_id
+               WHERE u.id = s.user_id) o) AS owner
+     FROM sessions s WHERE s.token_hash = ?`, tokenHash);
+  const owner = session?.owner ?? undefined;
   const nowMs = Date.now();
   if (!session || !owner || !owner.active || session.expires <= nowMs || session.created_at + MAX_AGE_MS <= nowMs) {
     if (session) await run('DELETE FROM sessions WHERE token_hash = ?', tokenHash);

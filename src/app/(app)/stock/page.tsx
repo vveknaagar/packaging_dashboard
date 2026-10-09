@@ -31,8 +31,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
 
   // A Store Admin is always pinned to their own store, whatever the URL says.
-  const locationId = isStore(user) ? user.location_id! : parseId(param(sp.location)) ?? await warehouseId();
-  const location = await get<LocationRow>('SELECT * FROM locations WHERE id = ?', locationId);
+  // No location chosen means the warehouse, found in the same query.
+  const chosen = isStore(user) ? user.location_id! : parseId(param(sp.location));
+  const location = await get<LocationRow>(
+    "SELECT * FROM locations WHERE id = COALESCE(?::integer, (SELECT id FROM locations WHERE type = 'warehouse'))", chosen);
   if (!location || !canViewLocation(user, location.id)) notFound();
 
   const canEdit = canEditStock(user, location.id) && !!location.active;
@@ -48,18 +50,20 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   if (view === 'instock') where.push('COALESCE(s.qty, 0) > 0');
   const from = `FROM items i LEFT JOIN stock s ON s.item_id = i.id AND s.location_id = ? WHERE ${where.join(' AND ')}`;
 
-  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params))!.n;
-  const pager = paginate(total, param(sp.page), PAGE_SIZE);
+  // Independent lookups go to the database together rather than one after another.
+  const [totalRow, totalsRow, outgoing, locations] = await Promise.all([
+    get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params),
+    get<{ items: number; units: number }>(
+      'SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items, COALESCE(SUM(qty), 0) AS units FROM stock WHERE location_id = ?', location.id),
+    inTransit(location.id, 'outgoing'),
+    isStore(user) ? [] : all<LocationRow>("SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, active DESC, name"),
+  ]);
+  const totals = totalsRow!;
+  const pager = paginate(totalRow!.n, param(sp.page), PAGE_SIZE);
   const rows = await all<StockRow>(
     `SELECT i.id, i.name, i.size, i.unit, i.thumb, i.image, i.active, COALESCE(s.qty, 0) AS qty
      ${from} ORDER BY i.name, i.size LIMIT ? OFFSET ?`,
     ...params, pager.pageSize, pager.offset);
-
-  const totals = (await get<{ items: number; units: number }>(
-    'SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items, COALESCE(SUM(qty), 0) AS units FROM stock WHERE location_id = ?', location.id))!;
-  const outgoing = await inTransit(location.id, 'outgoing');
-  const locations = isStore(user) ? [] : await all<LocationRow>(
-    "SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, active DESC, name");
   const filtered = !!q || view !== 'all';
   const locationQuery = isStore(user) ? undefined : location.id;
 

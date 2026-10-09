@@ -29,11 +29,6 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const q = param(sp.q).trim();
 
-  const locations = await all<LocationRow>(
-    `SELECT l.* FROM locations l
-     WHERE l.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.location_id = l.id AND s.qty > 0)
-     ORDER BY (l.type = 'warehouse') DESC, l.name`);
-
   const where = ['(i.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.item_id = i.id AND s.qty > 0))'];
   const params: (string | number)[] = [];
   if (q) {
@@ -41,8 +36,15 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
     params.push(likePattern(q), likePattern(q));
   }
   const whereSql = `WHERE ${where.join(' AND ')}`;
-  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params))!.n;
-  const pager = paginate(total, param(sp.page), PAGE_SIZE);
+  // Independent lookups go to the database together rather than one after another.
+  const [locations, totalRow] = await Promise.all([
+    all<LocationRow>(
+      `SELECT l.* FROM locations l
+       WHERE l.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.location_id = l.id AND s.qty > 0)
+       ORDER BY (l.type = 'warehouse') DESC, l.name`),
+    get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params),
+  ]);
+  const pager = paginate(totalRow!.n, param(sp.page), PAGE_SIZE);
   const items = await all<MatrixItem>(
     `SELECT i.id, i.name, i.size, i.unit, i.thumb, i.active,
             (SELECT COALESCE(SUM(qty), 0) FROM stock s WHERE s.item_id = i.id) AS total

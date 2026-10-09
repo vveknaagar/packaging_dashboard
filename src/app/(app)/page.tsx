@@ -114,11 +114,15 @@ function ActivityList({ rows, showLocation }: { rows: Activity[]; showLocation: 
 
 async function StoreDashboard({ user }: { user: SessionUser }) {
   const locationId = user.location_id!;
-  const summary = (await get<{ items_in_stock: number; units: number }>(
-    `SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items_in_stock, COALESCE(SUM(qty), 0) AS units
-     FROM stock WHERE location_id = ?`, locationId))!;
-  const incoming = await all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.dest_id = ? ORDER BY t.dispatched_at`, locationId);
-  const outgoing = await all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.source_id = ? ORDER BY t.dispatched_at`, locationId);
+  const [summaryRow, incoming, outgoing, activity] = await Promise.all([
+    get<{ items_in_stock: number; units: number }>(
+      `SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items_in_stock, COALESCE(SUM(qty), 0) AS units
+       FROM stock WHERE location_id = ?`, locationId),
+    all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.dest_id = ? ORDER BY t.dispatched_at`, locationId),
+    all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.source_id = ? ORDER BY t.dispatched_at`, locationId),
+    recentActivity(locationId, 8),
+  ]);
+  const summary = summaryRow!;
   const sum = (list: TransferSummary[]) => list.reduce((n, t) => n + t.units, 0);
 
   return (
@@ -143,7 +147,7 @@ async function StoreDashboard({ user }: { user: SessionUser }) {
         </section>
         <section className="card span-all">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
-          <ActivityList rows={await recentActivity(locationId, 8)} showLocation={false} />
+          <ActivityList rows={activity} showLocation={false} />
         </section>
       </div>
     </>
@@ -162,17 +166,23 @@ interface LocationStock {
 }
 
 async function AdminDashboard({ user }: { user: SessionUser }) {
-  const totalItems = (await get<{ n: number }>('SELECT COUNT(*) AS n FROM items WHERE active = 1'))!.n;
-  const totalStock = (await get<{ n: number }>('SELECT COALESCE(SUM(qty), 0) AS n FROM stock'))!.n;
-  const byLocation = await all<LocationStock>(
-    `SELECT l.id, l.name, l.code, l.type,
-            COALESCE(SUM(s.qty), 0) AS units,
-            COUNT(CASE WHEN s.qty > 0 THEN 1 END) AS items_in_stock
-     FROM locations l LEFT JOIN stock s ON s.location_id = l.id
-     GROUP BY l.id
-     HAVING l.active = 1 OR COALESCE(SUM(s.qty), 0) > 0
-     ORDER BY (l.type = 'warehouse') DESC, units DESC, l.name`);
-  const pending = await all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' ORDER BY t.dispatched_at`);
+  // Independent lookups go to the database together rather than one after another.
+  const [totals, byLocation, pending, activity] = await Promise.all([
+    get<{ items: number; units: number }>(
+      'SELECT (SELECT COUNT(*) FROM items WHERE active = 1) AS items, (SELECT COALESCE(SUM(qty), 0) FROM stock) AS units'),
+    all<LocationStock>(
+      `SELECT l.id, l.name, l.code, l.type,
+              COALESCE(SUM(s.qty), 0) AS units,
+              COUNT(CASE WHEN s.qty > 0 THEN 1 END) AS items_in_stock
+       FROM locations l LEFT JOIN stock s ON s.location_id = l.id
+       GROUP BY l.id
+       HAVING l.active = 1 OR COALESCE(SUM(s.qty), 0) > 0
+       ORDER BY (l.type = 'warehouse') DESC, units DESC, l.name`),
+    all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' ORDER BY t.dispatched_at`),
+    recentActivity(null, 8),
+  ]);
+  const totalItems = totals!.items;
+  const totalStock = totals!.units;
   const maxUnits = Math.max(1, ...byLocation.map((l) => l.units));
   const inTransitUnits = pending.reduce((n, t) => n + t.units, 0);
 
@@ -209,7 +219,7 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
         </section>
         <section className="card span-all">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
-          <ActivityList rows={await recentActivity(null, 8)} showLocation />
+          <ActivityList rows={activity} showLocation />
         </section>
       </div>
     </>

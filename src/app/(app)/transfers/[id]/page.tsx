@@ -23,12 +23,13 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
   if (!t || !canViewTransfer(user, t)) notFound();
 
   // A Super Admin looking through someone else's account must not use up that person's unread notifications.
-  if (!user.switched_from) {
-    await run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND transfer_id = ? AND read_at IS NULL', now(), user.id, t.id);
-  }
-
-  const lines = await getLines(t.id);
-  const events = await getEvents(t.id);
+  // Independent lookups go to the database together rather than one after another.
+  const [, lines, events] = await Promise.all([
+    user.switched_from ? undefined
+      : run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND transfer_id = ? AND read_at IS NULL', now(), user.id, t.id),
+    getLines(t.id),
+    getEvents(t.id),
+  ]);
   const asSource = isSourceUser(user, t);
   const asDest = isDestUser(user, t);
   const received = t.status === 'completed' || t.status === 'discrepancy';

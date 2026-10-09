@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import crypto from 'node:crypto';
 import pg from 'pg';
 import { config } from './config';
 
@@ -205,6 +206,13 @@ ALTER TABLE images          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bulk_previews   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bulk_preview_images ENABLE ROW LEVEL SECURITY;
 
+-- Settings the app keeps for itself, such as which version of this schema was applied.
+CREATE TABLE IF NOT EXISTS app_meta (
+  key   text PRIMARY KEY,
+  value text NOT NULL
+);
+ALTER TABLE app_meta ENABLE ROW LEVEL SECURITY;
+
 -- The single warehouse always exists; the Super Admin can rename it later.
 INSERT INTO locations (type, name, code, created_at)
 SELECT 'warehouse', 'Central Warehouse', 'WH', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
@@ -226,6 +234,10 @@ function createPool(): pg.Pool {
   return new pg.Pool({
     connectionString: config.DATABASE_URL,
     max: config.DATABASE_POOL_MAX,
+    // Opening a connection costs several round trips (and seconds when the database is far
+    // away), so keep idle ones open for a while instead of pg's default of 10 seconds.
+    idleTimeoutMillis: 5 * 60 * 1000,
+    keepAlive: true,
     // Supabase's certificate is not signed by a CA that Node trusts out of the box,
     // so the connection is encrypted without verifying the certificate.
     ssl: local ? undefined : { rejectUnauthorized: false },
@@ -242,13 +254,29 @@ function pool(): pg.Pool {
   return (holder.__packagingPool ??= createPool());
 }
 
-/** Create missing tables. Two server processes starting together take turns. */
+// A fingerprint of SCHEMA, recorded once it is applied. Any change to SCHEMA changes it.
+const SCHEMA_HASH = crypto.createHash('sha256').update(SCHEMA).digest('hex');
+
+/**
+ * Create missing tables. Usually the recorded fingerprint matches and this is
+ * one quick lookup; the full schema only runs after SCHEMA changes (it takes
+ * table locks, so running it on every server start would slow everyone down).
+ * Two server processes starting together take turns.
+ */
 async function migrate(): Promise<void> {
+  const meta = await pool().query<{ found: boolean }>("SELECT to_regclass('public.app_meta') IS NOT NULL AS found");
+  if (meta.rows[0].found) {
+    const applied = await pool().query<{ value: string }>("SELECT value FROM app_meta WHERE key = 'schema'");
+    if (applied.rows[0]?.value === SCHEMA_HASH) return;
+  }
   const client = await pool().connect();
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock($1)', [SCHEMA_LOCK]);
     await client.query(SCHEMA);
+    await client.query(
+      `INSERT INTO app_meta (key, value) VALUES ('schema', $1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      [SCHEMA_HASH]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

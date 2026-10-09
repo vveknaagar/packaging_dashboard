@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { setItemStatusAction } from '@/app/actions/items';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { ActiveBadge, Empty, ItemCell, PageHead, Pager } from '@/components/ui';
-import { all, get, warehouseId } from '@/lib/db';
+import { all, get } from '@/lib/db';
 import { isStore, isSuper } from '@/lib/permissions';
 import { requireUser } from '@/lib/session';
 import type { ItemRow, LocationRow } from '@/lib/types';
@@ -29,19 +29,6 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   // Whose stock the Stock column shows. A Store Admin always sees their own
   // store. The Warehouse Admin starts on the warehouse and the Super Admin on
   // the total; both can switch to any location.
-  const locations = store ? [] : await all<LocationRow>(
-    "SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, active DESC, name");
-  const requested = param(sp.location);
-  const requestedId = parseId(requested);
-  let locationId: number | null; // null means the total across all locations
-  if (store) locationId = user.location_id;
-  else if (requested === 'all') locationId = null;
-  else if (requestedId && locations.some((l) => l.id === requestedId)) locationId = requestedId;
-  else locationId = isSuper(user) ? null : await warehouseId();
-  const locationName = locationId === null
-    ? 'All locations'
-    : store ? user.location_name ?? 'My store' : locations.find((l) => l.id === locationId)!.name;
-
   const where: string[] = [];
   const params: (string | number)[] = [];
   if (q) {
@@ -51,8 +38,23 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   if (status !== 'all') { where.push('i.active = ?'); params.push(status === 'active' ? 1 : 0); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params))!.n;
-  const pager = paginate(total, param(sp.page), PAGE_SIZE);
+  // Independent lookups go to the database together rather than one after another.
+  const [locations, totalRow] = await Promise.all([
+    store ? [] : all<LocationRow>("SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, active DESC, name"),
+    get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params),
+  ]);
+  const requested = param(sp.location);
+  const requestedId = parseId(requested);
+  let locationId: number | null; // null means the total across all locations
+  if (store) locationId = user.location_id;
+  else if (requested === 'all') locationId = null;
+  else if (requestedId && locations.some((l) => l.id === requestedId)) locationId = requestedId;
+  else locationId = isSuper(user) ? null : locations.find((l) => l.type === 'warehouse')!.id;
+  const locationName = locationId === null
+    ? 'All locations'
+    : store ? user.location_name ?? 'My store' : locations.find((l) => l.id === locationId)!.name;
+
+  const pager = paginate(totalRow!.n, param(sp.page), PAGE_SIZE);
   const qtySql = locationId === null
     ? '(SELECT COALESCE(SUM(s.qty), 0) FROM stock s WHERE s.item_id = i.id)'
     : '(SELECT COALESCE(SUM(s.qty), 0) FROM stock s WHERE s.item_id = i.id AND s.location_id = ?)';

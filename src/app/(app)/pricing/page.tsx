@@ -34,9 +34,11 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
   if (missing) where.push("(i.hsn = '' OR i.price_paise IS NULL)");
   const whereSql = `WHERE ${where.join(' AND ')}`;
 
-  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params))!.n;
-  const incomplete = (await get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE active = 1 AND (hsn = '' OR price_paise IS NULL)"))!.n;
-  const pager = paginate(total, param(sp.page), PAGE_SIZE);
+  const counts = (await get<{ total: number; incomplete: number }>(
+    `SELECT (SELECT COUNT(*) FROM items i ${whereSql}) AS total,
+            (SELECT COUNT(*) FROM items WHERE active = 1 AND (hsn = '' OR price_paise IS NULL)) AS incomplete`, ...params))!;
+  const incomplete = counts.incomplete;
+  const pager = paginate(counts.total, param(sp.page), PAGE_SIZE);
   const items = await all<ItemRow>(
     `SELECT i.* FROM items i ${whereSql}
      ORDER BY i.name, i.size LIMIT ? OFFSET ?`,

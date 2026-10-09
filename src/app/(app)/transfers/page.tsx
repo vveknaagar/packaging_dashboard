@@ -58,8 +58,12 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
     JOIN locations d ON d.id = t.dest_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
 
-  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params))!.n;
-  const pager = paginate(total, param(sp.page), PAGE_SIZE);
+  // Independent lookups go to the database together rather than one after another.
+  const [totalRow, toReceiveRow] = await Promise.all([
+    get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params),
+    home ? get<{ n: number }>("SELECT COUNT(*) AS n FROM transfers WHERE dest_id = ? AND status = 'dispatched'", home) : undefined,
+  ]);
+  const pager = paginate(totalRow!.n, param(sp.page), PAGE_SIZE);
   const rows = await all<TransferListRow>(
     `SELECT t.id, t.number, t.status, t.created_at, t.dispatched_at, t.source_id, t.dest_id,
             s.name AS source_name, d.name AS dest_name,
@@ -68,9 +72,7 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
      ${from} ORDER BY t.id DESC LIMIT ? OFFSET ?`,
     ...params, pager.pageSize, pager.offset);
 
-  const toReceive = home
-    ? (await get<{ n: number }>("SELECT COUNT(*) AS n FROM transfers WHERE dest_id = ? AND status = 'dispatched'", home))!.n
-    : 0;
+  const toReceive = toReceiveRow?.n ?? 0;
   const filtered = !!q || !!status;
 
   return (
