@@ -5,6 +5,7 @@ import { cancelTransferAction, dispatchTransferAction, rejectTransferAction } fr
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { ReasonDialogButton } from '@/components/ReasonDialogButton';
 import { ReceiveForm } from '@/components/ReceiveForm';
+import { ParcelPhotoInput } from '@/components/ParcelPhotoInput';
 import { ItemCell, PageHead, StatusBadge } from '@/components/ui';
 import { now, run } from '@/lib/db';
 import { canViewTransfer, isDestUser, isSourceUser } from '@/lib/permissions';
@@ -127,13 +128,6 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
             <section className="card">
               <div className="card-head"><h2>Draft</h2><span className="muted">No stock has moved yet</span></div>
               <div className="form-actions start">
-                <ActionForm
-                  action={dispatchTransferAction} className="inline-form" toastErrors
-                  confirm={`Dispatch ${t.number}? ${fmtNum(unitsSent)} unit(s) will be deducted from ${t.source_name} and shown as in transit.`}
-                >
-                  <input type="hidden" name="id" value={t.id} />
-                  <SubmitButton pendingLabel="Dispatching…">Dispatch</SubmitButton>
-                </ActionForm>
                 <Link href={`/transfers/${t.id}/edit`} className="btn">Edit draft</Link>
                 <ReasonDialogButton
                   action={cancelTransferAction} id={t.id}
@@ -142,6 +136,17 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
                   reasonRequired={false} submitLabel="Cancel draft"
                 />
               </div>
+              <ActionForm
+                action={dispatchTransferAction} className="stack"
+                confirm={`Dispatch ${t.number}? ${fmtNum(unitsSent)} unit(s) will be deducted from ${t.source_name} and shown as in transit.`}
+              >
+                <input type="hidden" name="id" value={t.id} />
+                <h3>Dispatch</h3>
+                <ParcelPhotoInput required />
+                <div className="form-actions start">
+                  <SubmitButton pendingLabel="Dispatching…">Dispatch</SubmitButton>
+                </div>
+              </ActionForm>
             </section>
           )}
           {asSource && t.status === 'dispatched' && (
@@ -170,6 +175,14 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
               )}
               <dt>Created</dt><dd>{fmtDateTime(t.created_at)} by {t.created_by_name}</dd>
               {t.dispatched_at && <><dt>Dispatched</dt><dd>{fmtDateTime(t.dispatched_at)} by {t.dispatched_by_name}</dd></>}
+              {t.parcel_image && (
+                <><dt>Parcel photo</dt><dd>
+                  <a href={`/uploads/${t.parcel_image}`} target="_blank" rel="noopener" title="Open the full photo">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="parcel-photo" src={`/uploads/${t.parcel_image}`} alt={`Parcel for ${t.number}`} loading="lazy" />
+                  </a>
+                </dd></>
+              )}
               {t.received_at && <><dt>Received</dt><dd>{fmtDateTime(t.received_at)} by {t.received_by_name}</dd></>}
               {t.closed_at && <><dt>{t.status === 'rejected' ? 'Rejected' : 'Cancelled'}</dt><dd>{fmtDateTime(t.closed_at)} by {t.closed_by_name}</dd></>}
               {t.note && <><dt>Note</dt><dd>{t.note}</dd></>}

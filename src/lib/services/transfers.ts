@@ -4,6 +4,7 @@ import { canCreateTransfer, isDestUser, isSourceUser, isStore, isSuper, onBehalf
 import type { LocationRow, SessionUser, TransferDetail, TransferEvent, TransferLine, TransferRow, TransferStatus } from '../types';
 import { TRANSPORT_MODES } from '../transport';
 import { clean, parseQty } from '../util';
+import { processImage, saveProcessed, type ProcessedImage } from './images';
 import * as stock from './stock';
 
 export const STATUS_LABELS: Record<TransferStatus, string> = {
@@ -213,8 +214,17 @@ async function loadForAction(id: number): Promise<TransferRow> {
   return transfer;
 }
 
-async function dispatchInTx(transfer: TransferRow, user: SessionUser) {
-  const dest = (await get<LocationRow>('SELECT * FROM locations WHERE id = ?', transfer.dest_id))!;
+/**
+ * The sender must photograph the packed parcel to dispatch it. Checked and
+ * resized before the transaction starts, so the database is not held up.
+ */
+async function parcelPhotoFor(photo: Buffer | null | undefined): Promise<ProcessedImage> {
+  if (!photo?.length) throw new AppError('Upload a photo of the packed parcel to dispatch it.');
+  return processImage(photo);
+}
+
+async function dispatchInTx(transfer: TransferRow, user: SessionUser, photo: ProcessedImage) {
+  const dest =(await get<LocationRow>('SELECT * FROM locations WHERE id = ?', transfer.dest_id))!;
   if (!dest.active) throw new AppError(`${dest.name} is inactive and cannot receive transfers.`);
   const lines = await getLines(transfer.id);
   if (!lines.length) throw new AppError('This transfer has no items.');
@@ -237,7 +247,9 @@ async function dispatchInTx(transfer: TransferRow, user: SessionUser) {
          hsn = (SELECT hsn FROM items WHERE items.id = transfer_items.item_id),
          rate_paise = (SELECT price_paise FROM items WHERE items.id = transfer_items.item_id)
        WHERE transfer_id = ?`, transfer.id);
-  await run("UPDATE transfers SET status = 'dispatched', dispatched_by = ?, dispatched_at = ? WHERE id = ?", user.id, now(), transfer.id);
+  const parcel = await saveProcessed(photo, 'parcels');
+  await run(`UPDATE transfers SET status = 'dispatched', dispatched_by = ?, dispatched_at = ?, parcel_image = ?, parcel_thumb = ?
+             WHERE id = ?`, user.id, now(), parcel.image, parcel.thumb, transfer.id);
   await addEvent(transfer.id, user, 'dispatched', `${lines.length} item(s), ${units} unit(s) deducted from source and now in transit`);
   await notify(await usersAt(transfer.dest_id),
     `Incoming transfer ${transfer.number} from ${await locationName(transfer.source_id)} is waiting for your approval. Check the items, then approve or reject it.`,
@@ -256,10 +268,13 @@ interface SaveInput {
   /** Vehicle, LR or docket number. Optional. */
   transportRef: unknown;
   dispatchNow: boolean;
+  /** The uploaded photo of the packed parcel. Required when dispatching. */
+  parcelPhoto?: Buffer | null;
 }
 
 /** Create a transfer from the user's own location (the Super Admin names one). Optionally dispatch it straight away. */
-export function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, dispatchNow }: SaveInput): Promise<number> {
+export async function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, dispatchNow, parcelPhoto }: SaveInput): Promise<number> {
+  const photo = dispatchNow ? await parcelPhotoFor(parcelPhoto) : null;
   return tx(async () => {
     const { source, dest } = await checkRoute(user, isSuper(user) ? sourceId ?? null : user.location_id, destId);
     const lines = await normaliseLines(source.id, rawLines);
@@ -272,13 +287,14 @@ export function create({ user, sourceId, destId, rawLines, note, transportMode, 
       await run('INSERT INTO transfer_items (transfer_id, item_id, qty_sent) VALUES (?, ?, ?)', id, line.itemId, line.qty);
     }
     await addEvent(id, user, 'created', `${source.name} to ${dest.name}`);
-    if (dispatchNow) await dispatchInTx(await loadForAction(id), user);
+    if (photo) await dispatchInTx(await loadForAction(id), user, photo);
     return id;
   });
 }
 
 /** Replace the destination, note and lines of a draft. */
-export function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, dispatchNow }: SaveInput & { id: number }): Promise<number> {
+export async function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, dispatchNow, parcelPhoto }: SaveInput & { id: number }): Promise<number> {
+  const photo = dispatchNow ? await parcelPhotoFor(parcelPhoto) : null;
   return tx(async () => {
     const transfer = await loadForAction(id);
     if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can edit this transfer.');
@@ -293,17 +309,18 @@ export function updateDraft({ user, id, destId, rawLines, note, transportMode, t
       await run('INSERT INTO transfer_items (transfer_id, item_id, qty_sent) VALUES (?, ?, ?)', id, line.itemId, line.qty);
     }
     await addEvent(id, user, 'updated');
-    if (dispatchNow) await dispatchInTx(await loadForAction(id), user);
+    if (photo) await dispatchInTx(await loadForAction(id), user, photo);
     return id;
   });
 }
 
-export async function dispatch({ user, id }: { user: SessionUser; id: number }): Promise<void> {
+export async function dispatch({ user, id, parcelPhoto }: { user: SessionUser; id: number; parcelPhoto?: Buffer | null }): Promise<void> {
+  const photo = await parcelPhotoFor(parcelPhoto);
   await tx(async () => {
     const transfer = await loadForAction(id);
     if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can dispatch this transfer.');
     if (transfer.status !== 'draft') throw new AppError('This transfer has already been dispatched or closed.');
-    await dispatchInTx(transfer, user);
+    await dispatchInTx(transfer, user, photo);
   });
 }
 

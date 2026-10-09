@@ -7,7 +7,7 @@ import { AppError } from '../errors';
 const ALLOWED_FORMATS = new Set(['jpeg', 'png', 'webp', 'gif']);
 
 /** The only image names the app ever stores or serves under /uploads/. */
-export const STORED_IMAGE_PATTERN = /^items\/[a-f0-9]{24}(_t)?\.webp$/;
+export const STORED_IMAGE_PATTERN = /^(items|parcels)\/[a-f0-9]{24}(_t)?\.webp$/;
 
 export interface ProcessedImage {
   main: Buffer;
@@ -46,12 +46,15 @@ export async function processImage(buffer: Buffer): Promise<ProcessedImage> {
 
 /**
  * Store a processed image and its thumbnail. Returns the paths they are served
- * under (/uploads/<path>). Inside tx() they are saved together with the item.
+ * under (/uploads/<path>). Inside tx() they are saved together with the item
+ * or transfer they belong to.
  */
-export async function saveProcessed({ main, thumb }: ProcessedImage): Promise<{ image: string; thumb: string }> {
+export async function saveProcessed(
+  { main, thumb }: ProcessedImage, folder: 'items' | 'parcels' = 'items',
+): Promise<{ image: string; thumb: string }> {
   const id = crypto.randomBytes(12).toString('hex');
-  const image = `items/${id}.webp`;
-  const thumbPath = `items/${id}_t.webp`;
+  const image = `${folder}/${id}.webp`;
+  const thumbPath = `${folder}/${id}_t.webp`;
   const ts = now();
   await run('INSERT INTO images (path, data, created_at) VALUES (?, ?, ?), (?, ?, ?)', image, main, ts, thumbPath, thumb, ts);
   return { image, thumb: thumbPath };

@@ -321,7 +321,7 @@ describe('transfers', () => {
   });
 
   test('quantity cannot exceed available stock', async () => {
-    await assert.rejects(async () => await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(501), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true }),
+    await assert.rejects(async () => await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(501), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer }),
       isAppError(/only 500 available/));
   });
 
@@ -337,7 +337,7 @@ describe('transfers', () => {
 
     const draft = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(2), note: '', transportMode: 'hand', transportRef: '', dispatchNow: false });
     assert.equal((await transfers.getLines(draft))[0].rate_paise, null, 'a draft has no price yet');
-    await transfers.dispatch({ user: whAdmin, id: draft });
+    await transfers.dispatch({ user: whAdmin, id: draft, parcelPhoto: pngBuffer });
     // A later price change does not touch what was dispatched.
     await items.savePricing(superAdmin, [{ id: boxId, hsn: '4819', price: '99' }]);
     const [line] = await transfers.getLines(draft);
@@ -364,8 +364,28 @@ describe('transfers', () => {
     for (const id of [a, b]) await transfers.cancel({ user: whAdmin, id, reason: '' });
   });
 
+  test('the sender must add a photo of the parcel to dispatch, and it is kept with the transfer', async () => {
+    const before = await qty(boxId, whAdmin);
+    await assert.rejects(async () => await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(1), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true }),
+      isAppError(/photo of the packed parcel/));
+    const draft = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(1), note: '', transportMode: 'courier', transportRef: '', dispatchNow: false });
+    assert.equal((await transfers.getTransfer(draft))!.parcel_image, '', 'a draft needs no photo');
+    await assert.rejects(async () => await transfers.dispatch({ user: whAdmin, id: draft }), isAppError(/photo of the packed parcel/));
+    await assert.rejects(async () => await transfers.dispatch({ user: whAdmin, id: draft, parcelPhoto: Buffer.from('not an image') }), isAppError(/not a valid image/));
+    assert.equal((await transfers.getTransfer(draft))!.status, 'draft');
+    assert.equal(await qty(boxId, whAdmin), before, 'no stock moves without a photo');
+
+    await transfers.dispatch({ user: whAdmin, id: draft, parcelPhoto: pngBuffer });
+    const t = (await transfers.getTransfer(draft))!;
+    assert.match(t.parcel_image, /^parcels\/[a-f0-9]{24}\.webp$/);
+    const stored = (await images.readStored(t.parcel_image))!;
+    assert.equal(stored.subarray(8, 12).toString(), 'WEBP');
+    assert.ok(await images.readStored(t.parcel_thumb));
+    await transfers.cancel({ user: whAdmin, id: draft, reason: 'test over' });
+  });
+
   test('dispatch deducts from source; receipt in full adds to destination', async () => {
-    const id = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(100), note: 'Van 2', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const id = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(100), note: 'Van 2', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     const t = (await transfers.getTransfer(id))!;
     assert.equal(t.status, 'dispatched');
     assert.equal(await qty(boxId, whAdmin), 400);
@@ -395,7 +415,7 @@ describe('transfers', () => {
   });
 
   test('a discrepancy needs a remark, adds only what was received and notifies the Warehouse Admin', async () => {
-    const id = await transfers.create({ user: storeA, destId: storeB.location_id!, rawLines: lines(40), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const id = await transfers.create({ user: storeA, destId: storeB.location_id!, rawLines: lines(40), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     assert.equal(await qty(boxId, storeA), 60);
     const [line] = await transfers.getLines(id);
     await assert.rejects(async () => await transfers.receive({ user: storeB, id, received: { [line.id]: '35' }, remark: '' }), isAppError(/remark/));
@@ -412,7 +432,7 @@ describe('transfers', () => {
   });
 
   test('reject returns the stock to the source and needs a reason', async () => {
-    const id = await transfers.create({ user: whAdmin, destId: storeB.location_id!, rawLines: lines(50), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const id = await transfers.create({ user: whAdmin, destId: storeB.location_id!, rawLines: lines(50), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     assert.equal(await qty(boxId, whAdmin), 350);
     await assert.rejects(async () => await transfers.reject({ user: storeB, id, reason: '' }), isAppError(/reason is required/));
     await assert.rejects(async () => await transfers.reject({ user: storeA, id, reason: 'not mine' }), isAppError(/Only the destination/));
@@ -423,7 +443,7 @@ describe('transfers', () => {
   });
 
   test('the source can cancel before receipt and the stock comes back', async () => {
-    const id = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(30), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const id = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: lines(30), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     assert.equal(await qty(boxId, whAdmin), 370);
     await assert.rejects(async () => await transfers.cancel({ user: storeA, id, reason: 'x' }), isAppError(/Only the source/));
     await assert.rejects(async () => await transfers.cancel({ user: whAdmin, id, reason: '' }), isAppError(/reason is required/));
@@ -440,7 +460,7 @@ describe('transfers', () => {
     // Stock of the second line drops after the draft was saved.
     await stock.adjust({ user: whAdmin, itemId: tapeId, locationId: whAdmin.location_id!, mode: 'out', qty: '5', reason: 'Used' });
     const ledgerBefore = (await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM stock_ledger'))!.n;
-    await assert.rejects(async () => await transfers.dispatch({ user: whAdmin, id }), isAppError(/Not enough stock of Tape/));
+    await assert.rejects(async () => await transfers.dispatch({ user: whAdmin, id, parcelPhoto: pngBuffer }), isAppError(/Not enough stock of Tape/));
     assert.equal(await qty(boxId, whAdmin), 400, 'the first line was rolled back');
     assert.equal(await qty(tapeId, whAdmin), 35);
     assert.equal((await transfers.getTransfer(id))!.status, 'draft');
@@ -454,19 +474,19 @@ describe('transfers', () => {
     await assert.rejects(async () => await transfers.create({ user: storeA, destId: storeB.location_id!, rawLines: [], note: '', transportMode: 'courier', transportRef: '', dispatchNow: false }), isAppError(/at least one item/));
     // Only the source can dispatch someone's draft.
     const id = await transfers.create({ user: storeA, destId: storeB.location_id!, rawLines: lines(5), note: '', transportMode: 'courier', transportRef: '', dispatchNow: false });
-    await assert.rejects(async () => await transfers.dispatch({ user: storeB, id }), isAppError(/Only the source/));
-    await assert.rejects(async () => await transfers.dispatch({ user: whAdmin, id }), isAppError(/Only the source/));
+    await assert.rejects(async () => await transfers.dispatch({ user: storeB, id, parcelPhoto: pngBuffer }), isAppError(/Only the source/));
+    await assert.rejects(async () => await transfers.dispatch({ user: whAdmin, id, parcelPhoto: pngBuffer }), isAppError(/Only the source/));
   });
 
   test('a store with stock in transit cannot be deactivated', async () => {
-    const id = await transfers.create({ user: whAdmin, destId: storeB.location_id!, rawLines: lines(1), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const id = await transfers.create({ user: whAdmin, destId: storeB.location_id!, rawLines: lines(1), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     await assert.rejects(async () => await locations.setLocationStatus(superAdmin, storeB.location_id!, false), isAppError(/in transit/));
     await transfers.cancel({ user: whAdmin, id, reason: 'test' });
   });
 
   test("an item's transfers are listed newest first, without drafts, and a Store Admin only sees their own store's", async () => {
     const tape = (n: number) => [{ itemId: tapeId, qty: String(n) }];
-    const sent = await transfers.create({ user: whAdmin, destId: storeB.location_id!, rawLines: tape(5), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const sent = await transfers.create({ user: whAdmin, destId: storeB.location_id!, rawLines: tape(5), note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     const draft = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: tape(3), note: '', transportMode: 'courier', transportRef: '', dispatchNow: false });
 
     const [last] = await transfers.itemTransfers(whAdmin, tapeId);
@@ -498,14 +518,14 @@ describe('super admin', () => {
       rawLines: [{ itemId: tapeId, qty: '3' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: false,
     });
     assert.equal((await transfers.getTransfer(id))!.source_id, whAdmin.location_id);
-    await transfers.dispatch({ user: superAdmin, id });
+    await transfers.dispatch({ user: superAdmin, id, parcelPhoto: pngBuffer });
     assert.equal(await qty(tapeId, whAdmin), sent - 3);
     const [line] = await transfers.getLines(id);
     assert.equal(await transfers.receive({ user: superAdmin, id, received: { [line.id]: '3' }, remark: '' }), 'completed');
     assert.equal(await qty(tapeId, storeB), held + 3);
 
     // And can cancel someone else's transfer before it is received.
-    const other = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const other = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     await transfers.cancel({ user: superAdmin, id: other, reason: 'Sent by mistake' });
     assert.equal((await transfers.getTransfer(other))!.status, 'cancelled');
     assert.equal(await qty(tapeId, whAdmin), sent - 3);
@@ -535,7 +555,7 @@ describe('switching users', () => {
     const entry = (await db.get<{ user_id: number; reason: string }>('SELECT user_id, reason FROM stock_ledger ORDER BY id DESC LIMIT 1'))!;
     assert.deepEqual([entry.user_id, entry.reason], [whAdmin.id, 'Recount (done by Super Admin Root)']);
 
-    const id = await transfers.create({ user: asWarehouse, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '2' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: true });
+    const id = await transfers.create({ user: asWarehouse, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '2' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
     assert.ok((await transfers.getEvents(id)).every((e) => e.user_id === whAdmin.id && e.detail.endsWith('(done by Super Admin Root)')));
     await transfers.cancel({ user: whAdmin, id, reason: 'test' });
     assert.doesNotMatch((await transfers.getEvents(id)).at(-1)!.detail, /Super Admin/, 'the user acting for themselves leaves no note');

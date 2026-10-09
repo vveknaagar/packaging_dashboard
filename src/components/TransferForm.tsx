@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { saveTransferAction } from '@/app/actions/stock';
 import { TRANSPORT_MODES } from '@/lib/transport';
 import { ActionForm, SubmitButton } from './ActionForm';
+import { ParcelPhotoInput } from './ParcelPhotoInput';
 
 export interface TransferFormItem {
   id: number;
@@ -46,6 +47,7 @@ export function TransferForm({
   const [picked, setPicked] = useState<Set<number>>(() => new Set(Object.keys(initialQty).map(Number)));
   const [search, setSearch] = useState('');
   const [selectedOnly, setSelectedOnly] = useState(false);
+  const [hasPhoto, setHasPhoto] = useState(false);
 
   // A ticked item needs a whole number from 1 up to the stock on hand.
   const lines = useMemo(() => items.map((item) => {
@@ -171,13 +173,22 @@ export function TransferForm({
         )}
       </div>
 
+      <div className="card">
+        <div className="card-head">
+          <h2>Parcel photo</h2>
+          <span className="muted">Needed to dispatch. Not needed for a draft.</span>
+        </div>
+        <ParcelPhotoInput onReady={setHasPhoto} />
+      </div>
+
       <div className="sticky-bar">
         <div><strong>{chosen.length}</strong> item(s), <strong>{units}</strong> unit(s)</div>
         <div className="form-actions">
           <Link href={transferId ? `/transfers/${transferId}` : '/transfers'} className="btn btn-ghost">Cancel</Link>
           <SubmitButton className="btn" name="intent" value="draft" disabled={!canSend}>Save draft</SubmitButton>
           <SubmitButton
-            name="intent" value="dispatch" disabled={!canSend} pendingLabel="Working…"
+            name="intent" value="dispatch" disabled={!canSend || !hasPhoto} pendingLabel="Working…"
+            title={hasPhoto ? undefined : 'Add a photo of the parcel to dispatch'}
             data-confirm={`Dispatch now? ${units} unit(s) will be deducted from ${sourceName} and shown as in transit.`}
           >
             Dispatch

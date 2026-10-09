@@ -1,6 +1,8 @@
 'use server';
 
 import { runAction } from '@/lib/action';
+import { config } from '@/lib/config';
+import { AppError } from '@/lib/errors';
 import * as stock from '@/lib/services/stock';
 import * as transfers from '@/lib/services/transfers';
 import type { ActionResult } from '@/lib/types';
@@ -36,6 +38,14 @@ function linesFrom(formData: FormData): transfers.RawLine[] {
   return lines;
 }
 
+/** The photo of the packed parcel, sent with a dispatch. The browser has already shrunk it. */
+async function parcelPhotoFrom(formData: FormData): Promise<Buffer | null> {
+  const file = formData.get('parcel_photo');
+  if (!(file instanceof File) || file.size === 0) return null;
+  if (file.size > config.MAX_IMAGE_BYTES) throw new AppError('The parcel photo is larger than 2 MB.');
+  return Buffer.from(await file.arrayBuffer());
+}
+
 /** Create a transfer or update a draft. The button pressed decides whether it is dispatched too. */
 export async function saveTransferAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
@@ -49,6 +59,7 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
       transportMode: rawField(formData, 'transport_mode'),
       transportRef: rawField(formData, 'transport_ref'),
       dispatchNow,
+      parcelPhoto: dispatchNow ? await parcelPhotoFrom(formData) : null,
     };
     const existingId = parseId(rawField(formData, 'id'));
     const id = existingId ? await transfers.updateDraft({ ...input, id: existingId }) : await transfers.create(input);
@@ -61,7 +72,7 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
 
 export async function dispatchTransferAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
-    await transfers.dispatch({ user, id: requireId(rawField(formData, 'id'), 'transfer') });
+    await transfers.dispatch({ user, id: requireId(rawField(formData, 'id'), 'transfer'), parcelPhoto: await parcelPhotoFrom(formData) });
     return { ok: 'Transfer dispatched. Stock is now in transit.' };
   });
 }

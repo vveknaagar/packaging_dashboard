@@ -73,6 +73,9 @@ export interface TransferRow {
   closed_by: number | null;
   closed_at: string | null;
   closed_reason: string;
+  /** Photo of the packed parcel, required at dispatch. Empty on older transfers. */
+  parcel_image: string;
+  parcel_thumb: string;
 }
 
 export interface TransferDetail extends TransferRow {

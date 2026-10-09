@@ -296,6 +296,7 @@ a.row-link:hover { background: var(--hover-soft); text-decoration: none; }
 .details { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
 .details dt { color: var(--muted); }
 .details dd { margin: 0; overflow-wrap: anywhere; }
+.details .parcel-photo { display: block; width: 100%; max-width: 280px; max-height: 280px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: var(--subtle); }
 
 /* ---------- tables ---------- */
 
