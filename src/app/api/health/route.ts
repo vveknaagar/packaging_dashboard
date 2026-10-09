@@ -18,6 +18,9 @@ export async function GET() {
     databaseUrlSet: url !== '',
     database,
     onVercel: !!process.env.VERCEL,
+    vercelEnvironment: process.env.VERCEL_ENV ?? null,
+    // Names only, to spot a setting saved under a slightly wrong name. Values are never shown.
+    settingNames: Object.keys(process.env).filter((k) => /DATABASE|SUPABASE|POOL|COOKIE/i.test(k)).map((k) => JSON.stringify(k)),
   };
   const started = Date.now();
   try {

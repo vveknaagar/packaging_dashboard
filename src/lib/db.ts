@@ -227,7 +227,9 @@ export const now = (): string => new Date().toISOString();
 
 function createPool(): pg.Pool {
   if (!config.DATABASE_URL || config.DATABASE_URL.includes('YOUR_')) {
-    throw new Error('DATABASE_URL in .env is not set up yet. Run `npm run db:password`, then restart the app.');
+    throw new Error(process.env.VERCEL
+      ? 'DATABASE_URL is not set. Add it in Vercel: Settings > Environment Variables (Production), then redeploy.'
+      : 'DATABASE_URL in .env is not set up yet. Run `npm run db:password`, then restart the app.');
   }
   const host = new URL(config.DATABASE_URL).hostname;
   const local = host === 'localhost' || host === '127.0.0.1' || host === '::1';
