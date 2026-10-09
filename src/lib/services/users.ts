@@ -1,4 +1,4 @@
-import { get, now, run, tx, warehouseId } from '../db';
+import { get, insert, now, run, tx, warehouseId } from '../db';
 import { AppError, ForbiddenError, NotFoundError } from '../errors';
 import { hashPassword } from '../passwords';
 import { isSuper } from '../permissions';
@@ -27,16 +27,16 @@ function parseRole(value: unknown): Role {
 }
 
 /** A Warehouse Admin always belongs to the warehouse; a Store Admin to exactly one store. */
-function resolveLocation(role: Role, locationId: number | null): number | null {
+async function resolveLocation(role: Role, locationId: number | null): Promise<number | null> {
   if (role === 'super_admin') return null;
   if (role === 'warehouse_admin') return warehouseId();
-  const store = locationId ? get<LocationRow>('SELECT * FROM locations WHERE id = ?', locationId) : undefined;
+  const store = locationId ? await get<LocationRow>('SELECT * FROM locations WHERE id = ?', locationId) : undefined;
   if (!store || store.type !== 'store') throw new AppError('Choose the store this Store Admin manages.');
   return store.id;
 }
 
-function assertUsernameFree(username: string, exceptId = 0) {
-  if (get('SELECT 1 FROM users WHERE username = ? AND id <> ?', username, exceptId)) {
+async function assertUsernameFree(username: string, exceptId = 0) {
+  if (await get('SELECT 1 FROM users WHERE username = ? AND id <> ?', username, exceptId)) {
     throw new AppError(`The username "${username}" is already taken.`);
   }
 }
@@ -58,11 +58,10 @@ export interface UserInput {
 }
 
 /** Insert a user row. The caller has already checked who is allowed to do this. */
-export function insertUser(name: string, username: string, passwordHash: string, role: Role, locationId: number | null, phone = ''): number {
-  const info = run(
+export function insertUser(name: string, username: string, passwordHash: string, role: Role, locationId: number | null, phone = ''): Promise<number> {
+  return insert(
     'INSERT INTO users (name, username, password_hash, role, location_id, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     name, username, passwordHash, role, locationId, phone, now());
-  return Number(info.lastInsertRowid);
 }
 
 export async function createUser(actor: SessionUser, input: UserInput): Promise<number> {
@@ -73,9 +72,9 @@ export async function createUser(actor: SessionUser, input: UserInput): Promise<
   const phone = cleanPhone(input.phone);
   const role = parseRole(input.role);
   const hash = await hashPassword(input.password);
-  return tx(() => {
-    assertUsernameFree(username);
-    return insertUser(name, username, hash, role, resolveLocation(role, input.locationId), phone);
+  return tx(async () => {
+    await assertUsernameFree(username);
+    return insertUser(name, username, hash, role, await resolveLocation(role, input.locationId), phone);
   });
 }
 
@@ -96,22 +95,22 @@ export async function updateUser(actor: SessionUser, id: number, input: UserUpda
   const phone = cleanPhone(input.phone);
   const role = parseRole(input.role);
   const hash = input.password ? await hashPassword(input.password) : null;
-  tx(() => {
-    const target = get<UserRow>('SELECT * FROM users WHERE id = ?', id);
+  await tx(async () => {
+    const target = await get<UserRow>('SELECT * FROM users WHERE id = ?', id);
     if (!target) throw new NotFoundError('User not found.');
     if (target.id === actor.id && (role !== 'super_admin' || !input.active)) {
       throw new AppError('You cannot change your own role or deactivate your own account.');
     }
-    const locationId = resolveLocation(role, input.locationId);
-    run('UPDATE users SET name = ?, phone = ?, role = ?, location_id = ?, active = ? WHERE id = ?',
+    const locationId = await resolveLocation(role, input.locationId);
+    await run('UPDATE users SET name = ?, phone = ?, role = ?, location_id = ?, active = ? WHERE id = ?',
       name, phone, role, locationId, input.active ? 1 : 0, id);
-    if (hash) run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
-    if (!get("SELECT 1 FROM users WHERE role = 'super_admin' AND active = 1")) {
+    if (hash) await run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
+    if (!await get("SELECT 1 FROM users WHERE role = 'super_admin' AND active = 1")) {
       throw new AppError('There must always be at least one active Super Admin.');
     }
     // A new password, role or status signs the user out everywhere.
     if (hash || !input.active || role !== target.role || locationId !== target.location_id) {
-      run('DELETE FROM sessions WHERE user_id = ?', id);
+      await run('DELETE FROM sessions WHERE user_id = ?', id);
     }
   });
 }

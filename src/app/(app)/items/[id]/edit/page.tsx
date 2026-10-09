@@ -14,10 +14,10 @@ export default async function EditItemPage({ params }: { params: Promise<{ id: s
   const user = await requireUser();
   if (!isSuper(user)) return <Forbidden />;
   const id = parseId((await params).id);
-  const item = id ? get<ItemRow>('SELECT * FROM items WHERE id = ?', id) : undefined;
+  const item = id ? await get<ItemRow>('SELECT * FROM items WHERE id = ?', id) : undefined;
   if (!item) notFound();
 
-  const units = all<{ v: string }>("SELECT DISTINCT unit AS v FROM items WHERE unit <> '' ORDER BY v COLLATE NOCASE").map((r) => r.v);
+  const units = (await all<{ v: string }>("SELECT DISTINCT unit AS v FROM items WHERE unit <> '' ORDER BY v")).map((r) => r.v);
 
   return (
     <>

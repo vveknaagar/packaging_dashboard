@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // Hide the dev-mode "N" badge; it overlaps the sidebar. Errors still show.
   devIndicators: false,
   // Native and Node-only packages are loaded with require() instead of being bundled.
-  serverExternalPackages: ['better-sqlite3', 'sharp', 'exceljs', 'yauzl', 'bcryptjs'],
+  serverExternalPackages: ['pg', 'sharp', 'exceljs', 'yauzl', 'bcryptjs'],
   experimental: {
     serverActions: {
       // Item images may be up to 2 MB; leave room for the rest of the form.

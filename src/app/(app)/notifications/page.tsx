@@ -22,8 +22,8 @@ interface NotificationRow {
 
 export default async function NotificationsPage() {
   const user = await requireUser();
-  const pending = pendingApprovals(user);
-  const rows = all<NotificationRow>(
+  const pending = await pendingApprovals(user);
+  const rows = await all<NotificationRow>(
     `SELECT n.id, n.ts, n.message, n.transfer_id, n.read_at,
             (t.status = 'dispatched' AND t.dest_id = ?) AS awaiting
      FROM notifications n LEFT JOIN transfers t ON t.id = n.transfer_id

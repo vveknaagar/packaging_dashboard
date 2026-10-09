@@ -14,10 +14,10 @@ export const metadata: Metadata = { title: 'Transfer slip' };
 export default async function TransferSlipPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const id = parseId((await params).id);
-  const t = id ? getTransfer(id) : undefined;
+  const t = id ? await getTransfer(id) : undefined;
   if (!t || !canViewTransfer(user, t) || t.status === 'draft') notFound();
 
-  const lines = getLines(t.id);
+  const lines = await getLines(t.id);
   const received = t.status === 'completed' || t.status === 'discrepancy';
   const totalSent = lines.reduce((n, l) => n + l.qty_sent, 0);
   const totalReceived = lines.reduce((n, l) => n + (l.qty_received ?? 0), 0);

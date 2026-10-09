@@ -29,10 +29,10 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const q = param(sp.q).trim();
 
-  const locations = all<LocationRow>(
+  const locations = await all<LocationRow>(
     `SELECT l.* FROM locations l
      WHERE l.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.location_id = l.id AND s.qty > 0)
-     ORDER BY (l.type = 'warehouse') DESC, l.name COLLATE NOCASE`);
+     ORDER BY (l.type = 'warehouse') DESC, l.name`);
 
   const where = ['(i.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.item_id = i.id AND s.qty > 0))'];
   const params: (string | number)[] = [];
@@ -41,20 +41,20 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
     params.push(likePattern(q), likePattern(q));
   }
   const whereSql = `WHERE ${where.join(' AND ')}`;
-  const total = get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params)!.n;
+  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params))!.n;
   const pager = paginate(total, param(sp.page), PAGE_SIZE);
-  const items = all<MatrixItem>(
+  const items = await all<MatrixItem>(
     `SELECT i.id, i.name, i.size, i.unit, i.thumb, i.active,
             (SELECT COALESCE(SUM(qty), 0) FROM stock s WHERE s.item_id = i.id) AS total
      FROM items i ${whereSql}
-     ORDER BY i.name COLLATE NOCASE, i.size COLLATE NOCASE LIMIT ? OFFSET ?`,
+     ORDER BY i.name, i.size LIMIT ? OFFSET ?`,
     ...params, pager.pageSize, pager.offset);
 
   // One lookup for every cell on this page: "itemId:locationId" -> quantity.
   const cells = new Map<string, number>();
   if (items.length) {
     const ids = items.map((i) => i.id);
-    const rows = all<{ item_id: number; location_id: number; qty: number }>(
+    const rows = await all<{ item_id: number; location_id: number; qty: number }>(
       `SELECT item_id, location_id, qty FROM stock WHERE item_id IN (${ids.map(() => '?').join(',')})`, ...ids);
     for (const row of rows) cells.set(`${row.item_id}:${row.location_id}`, row.qty);
   }

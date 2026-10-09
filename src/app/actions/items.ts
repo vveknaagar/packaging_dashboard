@@ -35,17 +35,17 @@ export async function saveItemAction(formData: FormData): Promise<ActionResult> 
 }
 
 export async function setItemStatusAction(formData: FormData): Promise<ActionResult> {
-  return runAction(['super_admin'], (user) => {
+  return runAction(['super_admin'], async (user) => {
     const active = field(formData, 'active') === '1';
-    items.setItemStatus(user, requireId(rawField(formData, 'id'), 'item'), active);
+    await items.setItemStatus(user, requireId(rawField(formData, 'id'), 'item'), active);
     return { ok: active ? 'Item activated.' : 'Item deactivated.' };
   });
 }
 
 /** Import the valid rows of a previewed bulk upload. */
 export async function importBulkAction(formData: FormData): Promise<ActionResult> {
-  return runAction(['super_admin'], (user) => {
-    const result = bulk.importPreview(field(formData, 'token'), user);
+  return runAction(['super_admin'], async (user) => {
+    const result = await bulk.importPreview(field(formData, 'token'), user);
     const parts = [`${result.imported} item(s) imported.`];
     if (result.units) parts.push(`${result.units} unit(s) of opening stock added to the warehouse.`);
     if (result.rejected) parts.push(`${result.rejected} row(s) with errors were left out.`);
@@ -55,15 +55,15 @@ export async function importBulkAction(formData: FormData): Promise<ActionResult
 }
 
 export async function discardBulkAction(formData: FormData): Promise<ActionResult> {
-  return runAction(['super_admin'], (user) => {
-    bulk.discard(field(formData, 'token'), user);
+  return runAction(['super_admin'], async (user) => {
+    await bulk.discard(field(formData, 'token'), user);
     return { redirectTo: '/items/bulk' };
   });
 }
 
 /** The Price & HSN screen sends hsn_<itemId> and price_<itemId> for every item it shows. */
 export async function savePricingAction(formData: FormData): Promise<ActionResult> {
-  return runAction(['super_admin'], (user) => {
+  return runAction(['super_admin'], async (user) => {
     const rows = new Map<number, items.PricingInput>();
     for (const [key, value] of formData.entries()) {
       const match = /^(hsn|price)_(\d{1,9})$/.exec(key);
@@ -73,7 +73,7 @@ export async function savePricingAction(formData: FormData): Promise<ActionResul
       row[match[1] as 'hsn' | 'price'] = value;
       rows.set(id, row);
     }
-    const changed = items.savePricing(user, [...rows.values()]);
+    const changed = await items.savePricing(user, [...rows.values()]);
     return { ok: changed ? `Saved ${changed} item(s).` : 'Nothing changed.' };
   });
 }

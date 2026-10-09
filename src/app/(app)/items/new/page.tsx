@@ -11,7 +11,7 @@ export default async function NewItemPage() {
   const user = await requireUser();
   if (!isSuper(user)) return <Forbidden />;
   // Units already in use are offered as suggestions.
-  const units = all<{ v: string }>("SELECT DISTINCT unit AS v FROM items WHERE unit <> '' ORDER BY v COLLATE NOCASE").map((r) => r.v);
+  const units = (await all<{ v: string }>("SELECT DISTINCT unit AS v FROM items WHERE unit <> '' ORDER BY v")).map((r) => r.v);
   return (
     <>
       <PageHead title="Add item" sub="Every item needs an image, a name and a size." />

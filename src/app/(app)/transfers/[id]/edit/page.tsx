@@ -14,18 +14,18 @@ export const metadata: Metadata = { title: 'Edit draft transfer' };
 export default async function EditTransferPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const id = parseId((await params).id);
-  const transfer = id ? getTransfer(id) : undefined;
+  const transfer = id ? await getTransfer(id) : undefined;
   if (!transfer || !isSourceUser(user, transfer) || transfer.status !== 'draft') notFound();
 
-  const lines = getLines(transfer.id);
+  const lines = await getLines(transfer.id);
   return (
     <>
       <PageHead title={`Edit draft ${transfer.number}`} sub={`From ${transfer.source_name}`} />
       <TransferForm
         sourceName={transfer.source_name}
         stockLabel={isSuper(user) ? 'In stock' : undefined}
-        destinations={destinationsFor(transfer.source_id)}
-        items={transferableItems(transfer.source_id)}
+        destinations={await destinationsFor(transfer.source_id)}
+        items={await transferableItems(transfer.source_id)}
         transferId={transfer.id}
         initialDestId={transfer.dest_id}
         initialNote={transfer.note}

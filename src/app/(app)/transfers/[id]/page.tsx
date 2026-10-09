@@ -18,17 +18,17 @@ export const metadata: Metadata = { title: 'Transfer' };
 export default async function TransferDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const id = parseId((await params).id);
-  const t = id ? getTransfer(id) : undefined;
+  const t = id ? await getTransfer(id) : undefined;
   // A transfer the user may not see is reported exactly like one that does not exist.
   if (!t || !canViewTransfer(user, t)) notFound();
 
   // A Super Admin looking through someone else's account must not use up that person's unread notifications.
   if (!user.switched_from) {
-    run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND transfer_id = ? AND read_at IS NULL', now(), user.id, t.id);
+    await run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND transfer_id = ? AND read_at IS NULL', now(), user.id, t.id);
   }
 
-  const lines = getLines(t.id);
-  const events = getEvents(t.id);
+  const lines = await getLines(t.id);
+  const events = await getEvents(t.id);
   const asSource = isSourceUser(user, t);
   const asDest = isDestUser(user, t);
   const received = t.status === 'completed' || t.status === 'discrepancy';

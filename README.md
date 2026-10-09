@@ -1,14 +1,19 @@
 # Packaging Inventory & Stock Transfer
 
 A web dashboard for managing packaging material across one central warehouse and multiple stores.
-Built with Next.js (App Router), React and SQLite. Works on desktop and on phones.
+Built with Next.js (App Router), React and Postgres (hosted on Supabase). Works on desktop and on phones.
 
 This is the MVP: login and roles, items (single and bulk), locations, users, stock with a permanent
 ledger, transfers with inward (receive), and role-based dashboards.
 
 ## Run it
 
-Requires Node.js 20.9 or newer.
+Requires Node.js 20.9 or newer and a Postgres database (a free Supabase project works).
+
+1. In the Supabase dashboard, open your project, click **Connect**, and copy the **Session pooler**
+   connection string. Put it in `.env` as `DATABASE_URL`, with your database password in place of
+   `[YOUR-PASSWORD]`.
+2. Install and start:
 
 ```bash
 npm install
@@ -16,11 +21,16 @@ npm run build
 npm start
 ```
 
+The app creates its tables on first start; there is no SQL to run by hand.
 Open http://localhost:3000. The first visit asks you to create the Super Admin account.
 `npm start` also prints a Network address (for example `http://192.168.1.20:3000`) that phones on
 the same Wi-Fi can open.
 
 For development with live reload use `npm run dev` instead of build and start.
+
+**No cloud database yet?** `npm run start:local` runs everything on this computer: it starts a
+local Postgres (PGlite, kept in `data/pglite`), builds the app and serves it. `npm run dev:local`
+does the same with live reload (each page is slow the first time it is opened).
 
 ### Try it with demo data
 
@@ -31,8 +41,10 @@ pictures, opening stock and transfers in different states:
 npm run seed:demo
 ```
 
-It prints the demo usernames and the shared password, and refuses to run if any user already exists.
-Do not keep demo data for real stock: delete the `data` folder to start clean.
+It prints the demo usernames and the shared password. It refuses to run once the database has stores,
+items or transfers; a Super Admin account you already created is kept.
+Do not keep demo data for real stock: to start clean, drop the app's tables in Supabase
+(Table Editor) and delete the `data` folder.
 
 ## Roles
 
@@ -91,20 +103,32 @@ The transfer page has a timeline and a printable slip (use the browser's Print, 
 
 ## Data and backups
 
-Everything lives in the `data` folder next to the app:
+Everything, including item pictures and bulk-upload previews, is stored in the database (Supabase),
+so the app itself keeps nothing on disk. Supabase backs the database up daily (Database > Backups
+in the dashboard). To move the app to another machine, copy the project and `.env`.
 
-- `data/packaging.db` (plus `-wal` and `-shm` files): the SQLite database
-- `data/uploads/`: item images and thumbnails
+Row level security is switched on for every table with no policies, so Supabase's public REST API
+(the anon key) cannot read or change anything. Only the app, connecting with `DATABASE_URL`, can.
 
-Back up the whole `data` folder. To move the app to another machine, copy the project and that
-folder.
+## Put it online (Vercel)
+
+1. Push the project to GitHub, then on vercel.com choose **Add New > Project** and import the repository.
+2. Under **Environment Variables**, add `DATABASE_URL` (the Supabase **Transaction pooler** string,
+   port 6543), `DATABASE_POOL_MAX=3` and `COOKIE_SECURE=1`. Then deploy.
+
+`vercel.json` runs the app in Sydney (`syd1`), next to the Supabase database; if your database is
+in another region, change it to the closest Vercel region. On Vercel one upload can be at most
+4.5 MB, so a bulk upload's ZIP of pictures must stay under that (split bigger imports, or use
+image URLs in the sheet).
 
 ## Settings (environment variables)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | Port for `npm start` (or `npm start -- -p 8080`) |
-| `DATA_DIR` | `./data` | Where the database and images are stored |
+| `DATABASE_URL` | none (required) | Postgres connection string (Supabase Session pooler) |
+| `DATABASE_POOL_MAX` | `10` | Most database connections the app keeps open |
+| `DATA_DIR` | `./data` | Scratch folder for files while an upload is read |
 | `COOKIE_SECURE` | off | Set to `1` when the app is served only over HTTPS |
 | `DEMO_PASSWORD` | `packaging123` | Password used by `npm run seed:demo` |
 
@@ -118,7 +142,7 @@ behind HTTPS and set `COOKIE_SECURE=1`.
 npm test
 ```
 
-Runs the rules that protect stock against a throwaway database: role permissions, mandatory
+Runs the rules that protect stock against a throwaway in-memory Postgres (PGlite, no setup needed): role permissions, mandatory
 reasons, no negative stock, the permanent ledger, the full transfer flow (dispatch, receive,
 discrepancy, reject, cancel), all-or-nothing dispatch, and bulk upload validation.
 

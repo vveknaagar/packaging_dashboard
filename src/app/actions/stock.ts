@@ -11,9 +11,9 @@ const STOCK_ROLES = ['super_admin', 'warehouse_admin', 'store_admin'] as const;
 
 /** Stock In, Stock Out or Adjustment at the user's own location (any location for the Super Admin). */
 export async function adjustStockAction(formData: FormData): Promise<ActionResult> {
-  return runAction([...STOCK_ROLES], (user) => {
+  return runAction([...STOCK_ROLES], async (user) => {
     const mode = field(formData, 'mode');
-    const result = stock.adjust({
+    const result = await stock.adjust({
       user,
       itemId: requireId(rawField(formData, 'item_id'), 'item'),
       locationId: requireId(rawField(formData, 'location_id'), 'location'),
@@ -38,7 +38,7 @@ function linesFrom(formData: FormData): transfers.RawLine[] {
 
 /** Create a transfer or update a draft. The button pressed decides whether it is dispatched too. */
 export async function saveTransferAction(formData: FormData): Promise<ActionResult> {
-  return runAction([...STOCK_ROLES], (user) => {
+  return runAction([...STOCK_ROLES], async (user) => {
     const dispatchNow = field(formData, 'intent') === 'dispatch';
     const input = {
       user,
@@ -51,7 +51,7 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
       dispatchNow,
     };
     const existingId = parseId(rawField(formData, 'id'));
-    const id = existingId ? transfers.updateDraft({ ...input, id: existingId }) : transfers.create(input);
+    const id = existingId ? await transfers.updateDraft({ ...input, id: existingId }) : await transfers.create(input);
     return {
       ok: dispatchNow ? 'Transfer dispatched. Stock is now in transit.' : 'Draft saved.',
       redirectTo: `/transfers/${id}`,
@@ -60,21 +60,21 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
 }
 
 export async function dispatchTransferAction(formData: FormData): Promise<ActionResult> {
-  return runAction([...STOCK_ROLES], (user) => {
-    transfers.dispatch({ user, id: requireId(rawField(formData, 'id'), 'transfer') });
+  return runAction([...STOCK_ROLES], async (user) => {
+    await transfers.dispatch({ user, id: requireId(rawField(formData, 'id'), 'transfer') });
     return { ok: 'Transfer dispatched. Stock is now in transit.' };
   });
 }
 
 /** Received quantities arrive as recv_<lineId> = quantity. */
 export async function receiveTransferAction(formData: FormData): Promise<ActionResult> {
-  return runAction([...STOCK_ROLES], (user) => {
+  return runAction([...STOCK_ROLES], async (user) => {
     const received: Record<number, unknown> = {};
     for (const [key, value] of formData.entries()) {
       const match = /^recv_(\d{1,9})$/.exec(key);
       if (match) received[Number(match[1])] = value;
     }
-    const status = transfers.receive({
+    const status = await transfers.receive({
       user,
       id: requireId(rawField(formData, 'id'), 'transfer'),
       received,
@@ -89,15 +89,15 @@ export async function receiveTransferAction(formData: FormData): Promise<ActionR
 }
 
 export async function rejectTransferAction(formData: FormData): Promise<ActionResult> {
-  return runAction([...STOCK_ROLES], (user) => {
-    transfers.reject({ user, id: requireId(rawField(formData, 'id'), 'transfer'), reason: rawField(formData, 'reason') });
+  return runAction([...STOCK_ROLES], async (user) => {
+    await transfers.reject({ user, id: requireId(rawField(formData, 'id'), 'transfer'), reason: rawField(formData, 'reason') });
     return { ok: 'Transfer rejected. Stock has been returned to the source.' };
   });
 }
 
 export async function cancelTransferAction(formData: FormData): Promise<ActionResult> {
-  return runAction([...STOCK_ROLES], (user) => {
-    transfers.cancel({ user, id: requireId(rawField(formData, 'id'), 'transfer'), reason: rawField(formData, 'reason') });
+  return runAction([...STOCK_ROLES], async (user) => {
+    await transfers.cancel({ user, id: requireId(rawField(formData, 'id'), 'transfer'), reason: rawField(formData, 'reason') });
     return { ok: 'Transfer cancelled.' };
   });
 }

@@ -21,12 +21,12 @@ export default async function LocationsPage() {
   if (isStore(user)) return <Forbidden />;
   const canManage = isSuper(user);
 
-  const locations = all<LocationListRow>(
+  const locations = await all<LocationListRow>(
     `SELECT l.*, (SELECT COALESCE(SUM(qty), 0) FROM stock s WHERE s.location_id = l.id) AS units
      FROM locations l
-     ORDER BY (l.type = 'warehouse') DESC, l.active DESC, l.name COLLATE NOCASE`);
+     ORDER BY (l.type = 'warehouse') DESC, l.active DESC, l.name`);
   // Contact person and phone come from each location's admin, not from the location itself.
-  const contacts = allContacts();
+  const contacts = await allContacts();
 
   return (
     <>

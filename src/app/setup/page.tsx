@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'First-time setup' };
 /** Shown only while the system has no users: creates the Super Admin account. */
 export default async function SetupPage() {
   await connection(); // the answer depends on live data, so never prerender this page
-  if (hasAnyUser()) redirect('/login');
+  if (await hasAnyUser()) redirect('/login');
 
   return (
     <div className="auth-page">

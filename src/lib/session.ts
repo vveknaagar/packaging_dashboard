@@ -40,28 +40,28 @@ export const getUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
   const tokenHash = hashToken(token);
-  const session = get<SessionRow>('SELECT user_id, acting_as, expires, created_at FROM sessions WHERE token_hash = ?', tokenHash);
+  const session = await get<SessionRow>('SELECT user_id, acting_as, expires, created_at FROM sessions WHERE token_hash = ?', tokenHash);
   // The session always belongs to the person who signed in, even while they act as someone else.
-  const owner = session ? loadUser(session.user_id) : undefined;
+  const owner = session ? await loadUser(session.user_id) : undefined;
   const nowMs = Date.now();
   if (!session || !owner || !owner.active || session.expires <= nowMs || session.created_at + MAX_AGE_MS <= nowMs) {
-    if (session) run('DELETE FROM sessions WHERE token_hash = ?', tokenHash);
+    if (session) await run('DELETE FROM sessions WHERE token_hash = ?', tokenHash);
     return null;
   }
   if (session.expires - nowMs < IDLE_MS / 2) {
-    run('UPDATE sessions SET expires = ? WHERE token_hash = ?', nowMs + IDLE_MS, tokenHash);
+    await run('UPDATE sessions SET expires = ? WHERE token_hash = ?', nowMs + IDLE_MS, tokenHash);
   }
 
   let row = owner;
   let switchedFrom: SessionUser['switched_from'];
   if (session.acting_as) {
     // Only an active Super Admin can act as another user, and only while that user is active.
-    const target = owner.role === 'super_admin' ? loadUser(session.acting_as) : undefined;
+    const target = owner.role === 'super_admin' ? await loadUser(session.acting_as) : undefined;
     if (target?.active) {
       row = target;
       switchedFrom = { id: owner.id, name: owner.name };
     } else {
-      run('UPDATE sessions SET acting_as = NULL WHERE token_hash = ?', tokenHash);
+      await run('UPDATE sessions SET acting_as = NULL WHERE token_hash = ?', tokenHash);
     }
   }
   return {
@@ -85,16 +85,16 @@ export async function requireUser(): Promise<SessionUser> {
 
 export const hasRole = (user: SessionUser, ...roles: Role[]) => roles.includes(user.role);
 
-export function hasAnyUser(): boolean {
-  return !!get('SELECT 1 FROM users LIMIT 1');
+export async function hasAnyUser(): Promise<boolean> {
+  return !!await get('SELECT 1 FROM users LIMIT 1');
 }
 
 /** Start a session for a user who has just proved who they are. */
 export async function createSession(userId: number): Promise<void> {
   const token = crypto.randomBytes(32).toString('base64url');
   const nowMs = Date.now();
-  run('DELETE FROM sessions WHERE expires <= ?', nowMs);
-  run('INSERT INTO sessions (token_hash, user_id, created_at, expires) VALUES (?, ?, ?, ?)',
+  await run('DELETE FROM sessions WHERE expires <= ?', nowMs);
+  await run('INSERT INTO sessions (token_hash, user_id, created_at, expires) VALUES (?, ?, ?, ?)',
     hashToken(token), userId, nowMs, nowMs + IDLE_MS);
   const secure = config.COOKIE_SECURE || (await headers()).get('x-forwarded-proto') === 'https';
   (await cookies()).set(COOKIE_NAME, token, {
@@ -109,20 +109,20 @@ export async function createSession(userId: number): Promise<void> {
 /** Make this browser's session act as another user (null returns to the signed-in account). The caller checks who may. */
 export async function setActingAs(userId: number | null): Promise<void> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
-  if (token) run('UPDATE sessions SET acting_as = ? WHERE token_hash = ?', userId, hashToken(token));
+  if (token) await run('UPDATE sessions SET acting_as = ? WHERE token_hash = ?', userId, hashToken(token));
 }
 
 export async function destroySession(): Promise<void> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
-  if (token) run('DELETE FROM sessions WHERE token_hash = ?', hashToken(token));
+  if (token) await run('DELETE FROM sessions WHERE token_hash = ?', hashToken(token));
   store.delete(COOKIE_NAME);
 }
 
 /** Sign a user out everywhere except (optionally) the browser making this request. */
 export async function destroyOtherSessions(userId: number): Promise<void> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
-  run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', userId, token ? hashToken(token) : '');
+  await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', userId, token ? hashToken(token) : '');
 }
 
 /** A one-shot message shown on the next page ("Item saved"). Read and cleared in the browser. */

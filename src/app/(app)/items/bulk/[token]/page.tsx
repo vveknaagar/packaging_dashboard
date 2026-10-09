@@ -19,7 +19,7 @@ export default async function BulkPreviewPage({ params }: { params: Promise<{ to
 
   let manifest: PreviewManifest;
   try {
-    manifest = loadPreview(token, user);
+    manifest = await loadPreview(token, user);
   } catch (err) {
     if (!(err instanceof AppError)) throw err;
     return (
@@ -34,7 +34,7 @@ export default async function BulkPreviewPage({ params }: { params: Promise<{ to
   const valid = manifest.rows.filter((r) => !r.errors.length);
   const invalid = manifest.rows.length - valid.length;
   const openingUnits = valid.reduce((sum, r) => sum + (r.stock || 0), 0);
-  const warehouseName = get<{ name: string }>("SELECT name FROM locations WHERE type = 'warehouse'")!.name;
+  const warehouseName = (await get<{ name: string }>("SELECT name FROM locations WHERE type = 'warehouse'"))!.name;
 
   return (
     <>

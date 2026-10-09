@@ -14,7 +14,7 @@ export default async function EditLocationPage({ params }: { params: Promise<{ i
   const user = await requireUser();
   if (!isSuper(user)) return <Forbidden />;
   const id = parseId((await params).id);
-  const location = id ? get<LocationRow>('SELECT * FROM locations WHERE id = ?', id) : undefined;
+  const location = id ? await get<LocationRow>('SELECT * FROM locations WHERE id = ?', id) : undefined;
   if (!location) notFound();
   return (
     <>

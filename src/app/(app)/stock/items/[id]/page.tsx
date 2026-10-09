@@ -15,28 +15,28 @@ export const metadata: Metadata = { title: 'Item stock' };
 export default async function ItemStockPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const id = parseId((await params).id);
-  const item = id ? get<ItemRow>('SELECT * FROM items WHERE id = ?', id) : undefined;
+  const item = id ? await get<ItemRow>('SELECT * FROM items WHERE id = ?', id) : undefined;
   if (!item) notFound();
 
   // A Store Admin sees the item at their own store; everyone else sees the warehouse.
   const store = isStore(user);
-  const locationId = store ? user.location_id! : warehouseId();
-  const qty = getQty(item.id, locationId);
-  const onTheWay = inTransit(locationId, 'outgoing').get(item.id) ?? 0;
-  const arriving = inTransit(locationId, 'incoming').get(item.id) ?? 0;
-  const transfers = itemTransfers(user, item.id);
+  const locationId = store ? user.location_id! : await warehouseId();
+  const qty = await getQty(item.id, locationId);
+  const onTheWay = (await inTransit(locationId, 'outgoing')).get(item.id) ?? 0;
+  const arriving = (await inTransit(locationId, 'incoming')).get(item.id) ?? 0;
+  const transfers = await itemTransfers(user, item.id);
   const last = transfers.at(0);
 
   // Where every unit of this item is right now. A Store Admin only sees their own store, above.
-  const byLocation = store ? [] : all<{ id: number; name: string; type: string; qty: number }>(
+  const byLocation = store ? [] : await all<{ id: number; name: string; type: string; qty: number }>(
     `SELECT l.id, l.name, l.type, COALESCE(s.qty, 0) AS qty
      FROM locations l LEFT JOIN stock s ON s.location_id = l.id AND s.item_id = ?
      WHERE l.active = 1 OR COALESCE(s.qty, 0) > 0
-     ORDER BY (l.type = 'warehouse') DESC, l.name COLLATE NOCASE`, item.id);
-  const inTransitAll = store ? 0 : get<{ n: number }>(
+     ORDER BY (l.type = 'warehouse') DESC, l.name`, item.id);
+  const inTransitAll = store ? 0 : (await get<{ n: number }>(
     `SELECT COALESCE(SUM(ti.qty_sent), 0) AS n
      FROM transfer_items ti JOIN transfers t ON t.id = ti.transfer_id
-     WHERE t.status = 'dispatched' AND ti.item_id = ?`, item.id)!.n;
+     WHERE t.status = 'dispatched' AND ti.item_id = ?`, item.id))!.n;
   const everywhere = byLocation.reduce((n, l) => n + l.qty, 0) + inTransitAll;
 
   return (

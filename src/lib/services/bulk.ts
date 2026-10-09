@@ -5,8 +5,8 @@ import net from 'node:net';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import yauzl from 'yauzl';
-import { config, ensureDataDirs } from '../config';
-import { all, get, now, run, tx, warehouseId } from '../db';
+import { config } from '../config';
+import { all, get, insert, now, run, tx, warehouseId } from '../db';
 import { AppError, ForbiddenError, NotFoundError } from '../errors';
 import { isSuper } from '../permissions';
 import type { SessionUser } from '../types';
@@ -309,22 +309,21 @@ async function fetchImageFromUrl(ref: string): Promise<Buffer> {
 
 /* ---------- preview ---------- */
 
-function tokenDir(token: string): string {
+function checkToken(token: string): string {
   if (!/^[a-f0-9]{32}$/.test(String(token))) throw new NotFoundError('Upload not found.');
-  return path.join(config.BULK_DIR, token);
+  return token;
 }
 
-/** Remove staged uploads nobody finished within a day. */
-export function purgeStale(): void {
-  ensureDataDirs();
-  let names: string[] = [];
-  try { names = fs.readdirSync(config.BULK_DIR); } catch { return; }
-  for (const name of names) {
-    const dir = path.join(config.BULK_DIR, name);
-    try {
-      if (Date.now() - fs.statSync(dir).mtimeMs > STALE_MS) fs.rmSync(dir, { recursive: true, force: true });
-    } catch { /* ignore */ }
-  }
+async function deletePreview(token: string): Promise<void> {
+  await run('DELETE FROM bulk_preview_images WHERE token = ?', token);
+  await run('DELETE FROM bulk_previews WHERE token = ?', token);
+}
+
+/** Remove previews nobody finished within a day. */
+export async function purgeStale(): Promise<void> {
+  const cutoff = Date.now() - STALE_MS;
+  await run('DELETE FROM bulk_preview_images WHERE created_at < ?', cutoff);
+  await run('DELETE FROM bulk_previews WHERE created_at < ?', cutoff);
 }
 
 async function runPool(tasks: (() => Promise<void>)[], limit: number): Promise<void> {
@@ -349,12 +348,12 @@ interface BuildInput {
 
 /**
  * Read the uploaded sheet (and optional ZIP), validate every row, and stage
- * the processed images on disk. Nothing is written to the item list yet.
+ * the processed images in the database. Nothing is written to the item list yet.
  * Returns a token the preview and import screens use.
  */
 export async function buildPreview({ user, sheetPath, sheetName, zipPath }: BuildInput): Promise<string> {
   if (!isSuper(user)) throw new ForbiddenError();
-  purgeStale();
+  await purgeStale();
   const raw = await readSheet(sheetPath, sheetName);
   if (!raw.length) throw new AppError('The sheet is empty.');
   const headers = mapHeaders(raw[0].cells);
@@ -364,11 +363,10 @@ export async function buildPreview({ user, sheetPath, sheetName, zipPath }: Buil
 
   const zip = zipPath ? await openZip(zipPath) : null;
   const token = crypto.randomBytes(16).toString('hex');
-  const dir = tokenDir(token);
-  fs.mkdirSync(dir, { recursive: true });
+  const createdAt = Date.now();
 
   try {
-    const existing = new Set(all<{ name: string; size: string }>('SELECT name, size FROM items').map((i) => itemKey(i.name, i.size)));
+    const existing = new Set((await all<{ name: string; size: string }>('SELECT name, size FROM items')).map((i) => itemKey(i.name, i.size)));
     const seen = new Map<string, number>();
     const cell = (cells: string[], index: number | undefined, max: number) => (index === undefined ? '' : clean(cells[index], max));
 
@@ -420,8 +418,8 @@ export async function buildPreview({ user, sheetPath, sheetName, zipPath }: Buil
           }
           const processed = await images.processImage(buffer);
           const id = stagedCount++;
-          fs.writeFileSync(path.join(dir, `${id}.webp`), processed.main);
-          fs.writeFileSync(path.join(dir, `${id}_t.webp`), processed.thumb);
+          await run('INSERT INTO bulk_preview_images (token, idx, main, thumb, created_at) VALUES (?, ?, ?, ?, ?)',
+            token, id, processed.main, processed.thumb, createdAt);
           return id;
         })();
         imageJobs.set(cacheKey, job);
@@ -444,89 +442,81 @@ export async function buildPreview({ user, sheetPath, sheetName, zipPath }: Buil
       zipImages: zip ? zip.size : null,
       rows,
     };
-    fs.writeFileSync(path.join(dir, 'rows.json'), JSON.stringify(manifest));
+    await run('INSERT INTO bulk_previews (token, user_id, manifest, created_at) VALUES (?, ?, ?, ?)',
+      token, user.id, JSON.stringify(manifest), createdAt);
     return token;
   } catch (err) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await deletePreview(token);
     throw err;
   } finally {
     zip?.close();
   }
 }
 
-export function loadPreview(token: string, user: SessionUser): PreviewManifest {
+export async function loadPreview(token: string, user: SessionUser): Promise<PreviewManifest> {
   if (!isSuper(user)) throw new ForbiddenError();
-  const dir = tokenDir(token);
-  let manifest: PreviewManifest;
-  try {
-    manifest = JSON.parse(fs.readFileSync(path.join(dir, 'rows.json'), 'utf8'));
-  } catch {
-    throw new NotFoundError('This upload has expired or was already imported. Please upload the sheet again.');
-  }
-  if (manifest.userId !== user.id) throw new NotFoundError('Upload not found.');
-  return manifest;
+  const row = await get<{ user_id: number; manifest: string }>(
+    'SELECT user_id, manifest FROM bulk_previews WHERE token = ?', checkToken(token));
+  if (!row) throw new NotFoundError('This upload has expired or was already imported. Please upload the sheet again.');
+  if (row.user_id !== user.id) throw new NotFoundError('Upload not found.');
+  return JSON.parse(row.manifest) as PreviewManifest;
 }
 
-export function stagedThumbPath(token: string, user: SessionUser, index: string): string {
-  loadPreview(token, user);
+/** Thumbnail of a picture staged by a preview. Only the uploader can see it. */
+export async function stagedThumb(token: string, user: SessionUser, index: string): Promise<Buffer> {
+  await loadPreview(token, user);
   if (!/^\d{1,6}$/.test(index)) throw new NotFoundError();
-  return path.join(tokenDir(token), `${index}_t.webp`);
+  const row = await get<{ thumb: Buffer }>('SELECT thumb FROM bulk_preview_images WHERE token = ? AND idx = ?', token, Number(index));
+  if (!row) throw new NotFoundError();
+  return row.thumb;
 }
 
-export function discard(token: string, user: SessionUser): void {
-  loadPreview(token, user);
-  fs.rmSync(tokenDir(token), { recursive: true, force: true });
+export async function discard(token: string, user: SessionUser): Promise<void> {
+  await loadPreview(token, user);
+  await deletePreview(token);
 }
 
 /** Import every row that passed validation. Rows with errors are left out. */
-export function importPreview(token: string, user: SessionUser) {
-  const manifest = loadPreview(token, user);
-  const dir = tokenDir(token);
+export async function importPreview(token: string, user: SessionUser) {
+  const manifest = await loadPreview(token, user);
   const valid = manifest.rows.filter((r) => !r.errors.length && r.staged !== null);
   if (!valid.length) throw new AppError('There are no valid rows to import.');
-  const written: string[] = [];
-  try {
-    const result = tx(() => {
-      let imported = 0;
-      let skipped = 0;
-      let units = 0;
-      const warehouse = warehouseId();
-      for (const row of valid) {
-        // Someone may have added the same item since the preview was built.
-        if (get('SELECT 1 FROM items WHERE name = ? COLLATE NOCASE AND size = ? COLLATE NOCASE', row.name, row.size)) {
-          skipped += 1;
-          continue;
-        }
-        const stored = images.saveProcessed({
-          main: fs.readFileSync(path.join(dir, `${row.staged}.webp`)),
-          thumb: fs.readFileSync(path.join(dir, `${row.staged}_t.webp`)),
-        });
-        written.push(stored.image, stored.thumb);
-        const ts = now();
-        const info = run(
-          `INSERT INTO items (name, size, unit, image, thumb, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          row.name, row.size, row.unit, stored.image, stored.thumb, ts, ts);
-        // The Stock column becomes opening stock in the warehouse, with a ledger entry like any other change.
-        if (row.stock > 0) {
-          changeStock({
-            itemId: Number(info.lastInsertRowid),
-            locationId: warehouse,
-            delta: row.stock,
-            type: 'stock_in',
-            reason: 'Opening stock from bulk import',
-            userId: user.id,
-          });
-          units += row.stock;
-        }
-        imported += 1;
+  // Items, pictures, opening stock and removing the preview all happen together, or not at all.
+  return tx(async () => {
+    let imported = 0;
+    let skipped = 0;
+    let units = 0;
+    const warehouse = await warehouseId();
+    for (const row of valid) {
+      // Someone may have added the same item since the preview was built.
+      if (await get('SELECT 1 FROM items WHERE name = ? AND size = ?', row.name, row.size)) {
+        skipped += 1;
+        continue;
       }
-      return { imported, skipped, units, rejected: manifest.rows.length - valid.length };
-    });
-    fs.rmSync(dir, { recursive: true, force: true });
-    return result;
-  } catch (err) {
-    images.removeStored(...written);
-    throw err;
-  }
+      const staged = await get<{ main: Buffer; thumb: Buffer }>(
+        'SELECT main, thumb FROM bulk_preview_images WHERE token = ? AND idx = ?', token, row.staged);
+      if (!staged) throw new NotFoundError('This upload has expired. Please upload the sheet again.');
+      const stored = await images.saveProcessed(staged);
+      const ts = now();
+      const itemId = await insert(
+        `INSERT INTO items (name, size, unit, image, thumb, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        row.name, row.size, row.unit, stored.image, stored.thumb, ts, ts);
+      // The Stock column becomes opening stock in the warehouse, with a ledger entry like any other change.
+      if (row.stock > 0) {
+        await changeStock({
+          itemId,
+          locationId: warehouse,
+          delta: row.stock,
+          type: 'stock_in',
+          reason: 'Opening stock from bulk import',
+          userId: user.id,
+        });
+        units += row.stock;
+      }
+      imported += 1;
+    }
+    await deletePreview(token);
+    return { imported, skipped, units, rejected: manifest.rows.length - valid.length };
+  });
 }

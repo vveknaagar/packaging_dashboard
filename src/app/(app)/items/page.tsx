@@ -29,15 +29,15 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   // Whose stock the Stock column shows. A Store Admin always sees their own
   // store. The Warehouse Admin starts on the warehouse and the Super Admin on
   // the total; both can switch to any location.
-  const locations = store ? [] : all<LocationRow>(
-    "SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, active DESC, name COLLATE NOCASE");
+  const locations = store ? [] : await all<LocationRow>(
+    "SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, active DESC, name");
   const requested = param(sp.location);
   const requestedId = parseId(requested);
   let locationId: number | null; // null means the total across all locations
   if (store) locationId = user.location_id;
   else if (requested === 'all') locationId = null;
   else if (requestedId && locations.some((l) => l.id === requestedId)) locationId = requestedId;
-  else locationId = isSuper(user) ? null : warehouseId();
+  else locationId = isSuper(user) ? null : await warehouseId();
   const locationName = locationId === null
     ? 'All locations'
     : store ? user.location_name ?? 'My store' : locations.find((l) => l.id === locationId)!.name;
@@ -51,14 +51,14 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   if (status !== 'all') { where.push('i.active = ?'); params.push(status === 'active' ? 1 : 0); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const total = get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params)!.n;
+  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params))!.n;
   const pager = paginate(total, param(sp.page), PAGE_SIZE);
   const qtySql = locationId === null
     ? '(SELECT COALESCE(SUM(s.qty), 0) FROM stock s WHERE s.item_id = i.id)'
     : '(SELECT COALESCE(SUM(s.qty), 0) FROM stock s WHERE s.item_id = i.id AND s.location_id = ?)';
-  const items = all<ItemListRow>(
+  const items = await all<ItemListRow>(
     `SELECT i.*, ${qtySql} AS qty FROM items i ${whereSql}
-     ORDER BY i.name COLLATE NOCASE, i.size COLLATE NOCASE LIMIT ? OFFSET ?`,
+     ORDER BY i.name, i.size LIMIT ? OFFSET ?`,
     ...(locationId === null ? [] : [locationId]), ...params, pager.pageSize, pager.offset);
 
   const filtered = !!q || status !== 'active';

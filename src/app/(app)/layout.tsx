@@ -41,13 +41,13 @@ const NAV: Record<Role, NavItem[]> = {
 /** Everything inside this layout requires a signed-in user. */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const unread = get<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', user.id)!.n;
-  const switchable = canSwitchUsers(user) ? all<{ id: number; name: string; role: Role; location_name: string | null }>(
+  const unread = (await get<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', user.id))!.n;
+  const switchable = canSwitchUsers(user) ? await all<{ id: number; name: string; role: Role; location_name: string | null }>(
     `SELECT u.id, u.name, u.role, l.name AS location_name
      FROM users u LEFT JOIN locations l ON l.id = u.location_id
      WHERE u.active = 1
-     ORDER BY CASE u.role WHEN 'super_admin' THEN 0 WHEN 'warehouse_admin' THEN 1 ELSE 2 END, u.name COLLATE NOCASE`) : null;
+     ORDER BY CASE u.role WHEN 'super_admin' THEN 0 WHEN 'warehouse_admin' THEN 1 ELSE 2 END, u.name`) : null;
 
   return (
     <Shell
@@ -56,7 +56,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       roleLabel={ROLE_LABELS[user.role]}
       locationName={user.location_name}
       unread={unread}
-      pending={pendingApprovals(user).length}
+      pending={(await pendingApprovals(user)).length}
       switcher={switchable ? {
         users: switchable.map((u) => ({ id: u.id, label: `${u.name} · ${u.location_name ?? ROLE_LABELS[u.role]}` })),
         currentId: user.id,

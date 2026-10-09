@@ -1,4 +1,4 @@
-import { all, get, now, run, tx } from '../db';
+import { all, get, insert, now, run, tx } from '../db';
 import { AppError, ForbiddenError, NotFoundError } from '../errors';
 import { hashPassword } from '../passwords';
 import { isSuper } from '../permissions';
@@ -44,8 +44,8 @@ function validate(input: LocationInput, type: LocationType) {
   return { name, code, address, gstin };
 }
 
-function assertCodeFree(code: string, exceptId = 0) {
-  if (get('SELECT 1 FROM locations WHERE code = ? AND id <> ?', code, exceptId)) {
+async function assertCodeFree(code: string, exceptId = 0) {
+  if (await get('SELECT 1 FROM locations WHERE code = ? AND id <> ?', code, exceptId)) {
     throw new AppError(`The code "${code}" is already used by another location.`);
   }
 }
@@ -65,45 +65,44 @@ export async function createStore(actor: SessionUser, input: LocationInput, admi
       hash: await hashPassword(admin.password),
     };
   }
-  return tx(() => {
-    assertCodeFree(data.code);
-    const info = run(
+  return tx(async () => {
+    await assertCodeFree(data.code);
+    const id = await insert(
       "INSERT INTO locations (type, name, code, address, gstin, created_at) VALUES ('store', ?, ?, ?, ?, ?)",
       data.name, data.code, data.address, data.gstin, now());
-    const id = Number(info.lastInsertRowid);
     if (adminData) {
-      if (get('SELECT 1 FROM users WHERE username = ?', adminData.username)) {
+      if (await get('SELECT 1 FROM users WHERE username = ?', adminData.username)) {
         throw new AppError(`The username "${adminData.username}" is already taken.`);
       }
-      insertUser(adminData.name, adminData.username, adminData.hash, 'store_admin', id, adminData.phone);
+      await insertUser(adminData.name, adminData.username, adminData.hash, 'store_admin', id, adminData.phone);
     }
     return id;
   });
 }
 
-export function updateLocation(actor: SessionUser, id: number, input: LocationInput): void {
+export async function updateLocation(actor: SessionUser, id: number, input: LocationInput): Promise<void> {
   assertSuper(actor);
-  tx(() => {
-    const location = get<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
+  await tx(async () => {
+    const location = await get<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
     if (!location) throw new NotFoundError('Location not found.');
     const data = validate(input, location.type);
-    assertCodeFree(data.code, id);
-    run('UPDATE locations SET name = ?, code = ?, address = ?, gstin = ? WHERE id = ?', data.name, data.code, data.address, data.gstin, id);
+    await assertCodeFree(data.code, id);
+    await run('UPDATE locations SET name = ?, code = ?, address = ?, gstin = ? WHERE id = ?', data.name, data.code, data.address, data.gstin, id);
   });
 }
 
-export function setLocationStatus(actor: SessionUser, id: number, active: boolean): void {
+export async function setLocationStatus(actor: SessionUser, id: number, active: boolean): Promise<void> {
   assertSuper(actor);
-  tx(() => {
-    const location = get<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
+  await tx(async () => {
+    const location = await get<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
     if (!location) throw new NotFoundError('Location not found.');
     if (location.type === 'warehouse') throw new AppError('The warehouse cannot be deactivated.');
     if (!active) {
-      const open = get<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM transfers WHERE status = 'dispatched' AND (source_id = ? OR dest_id = ?)", id, id)!.n;
+      const open = (await get<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM transfers WHERE status = 'dispatched' AND (source_id = ? OR dest_id = ?)", id, id))!.n;
       if (open) throw new AppError(`${location.name} has ${open} transfer(s) in transit. Receive, reject or cancel them first.`);
     }
-    run('UPDATE locations SET active = ? WHERE id = ?', active ? 1 : 0, id);
+    await run('UPDATE locations SET active = ? WHERE id = ?', active ? 1 : 0, id);
   });
 }
 
@@ -117,8 +116,8 @@ export interface LocationContact {
  * admins, oldest account first. This is what "contact person and phone" means
  * for a location now that it has no contact fields of its own.
  */
-export function allContacts(): Map<number, LocationContact[]> {
-  const rows = all<{ location_id: number; name: string; phone: string }>(
+export async function allContacts(): Promise<Map<number, LocationContact[]>> {
+  const rows = await all<{ location_id: number; name: string; phone: string }>(
     'SELECT location_id, name, phone FROM users WHERE active = 1 AND location_id IS NOT NULL ORDER BY id');
   const map = new Map<number, LocationContact[]>();
   for (const row of rows) {

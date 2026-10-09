@@ -58,9 +58,9 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
     JOIN locations d ON d.id = t.dest_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
 
-  const total = get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params)!.n;
+  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params))!.n;
   const pager = paginate(total, param(sp.page), PAGE_SIZE);
-  const rows = all<TransferListRow>(
+  const rows = await all<TransferListRow>(
     `SELECT t.id, t.number, t.status, t.created_at, t.dispatched_at, t.source_id, t.dest_id,
             s.name AS source_name, d.name AS dest_name,
             (SELECT COUNT(*) FROM transfer_items ti WHERE ti.transfer_id = t.id) AS line_count,
@@ -69,7 +69,7 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
     ...params, pager.pageSize, pager.offset);
 
   const toReceive = home
-    ? get<{ n: number }>("SELECT COUNT(*) AS n FROM transfers WHERE dest_id = ? AND status = 'dispatched'", home)!.n
+    ? (await get<{ n: number }>("SELECT COUNT(*) AS n FROM transfers WHERE dest_id = ? AND status = 'dispatched'", home))!.n
     : 0;
   const filtered = !!q || !!status;
 

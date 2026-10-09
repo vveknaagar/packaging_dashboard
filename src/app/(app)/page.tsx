@@ -42,7 +42,7 @@ const TRANSFER_SUMMARY_SQL = `
   JOIN locations s ON s.id = t.source_id
   JOIN locations d ON d.id = t.dest_id`;
 
-function recentActivity(locationId: number | null, limit: number): Activity[] {
+function recentActivity(locationId: number | null, limit: number): Promise<Activity[]> {
   const sql = `
     SELECT g.id, g.ts, g.type, g.qty_change, g.qty_after,
            i.name AS item_name, i.size AS item_size, l.name AS location_name, u.name AS user_name
@@ -112,13 +112,13 @@ function ActivityList({ rows, showLocation }: { rows: Activity[]; showLocation: 
 
 /* ---------- Store Admin ---------- */
 
-function StoreDashboard({ user }: { user: SessionUser }) {
+async function StoreDashboard({ user }: { user: SessionUser }) {
   const locationId = user.location_id!;
-  const summary = get<{ items_in_stock: number; units: number }>(
+  const summary = (await get<{ items_in_stock: number; units: number }>(
     `SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items_in_stock, COALESCE(SUM(qty), 0) AS units
-     FROM stock WHERE location_id = ?`, locationId)!;
-  const incoming = all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.dest_id = ? ORDER BY t.dispatched_at`, locationId);
-  const outgoing = all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.source_id = ? ORDER BY t.dispatched_at`, locationId);
+     FROM stock WHERE location_id = ?`, locationId))!;
+  const incoming = await all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.dest_id = ? ORDER BY t.dispatched_at`, locationId);
+  const outgoing = await all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.source_id = ? ORDER BY t.dispatched_at`, locationId);
   const sum = (list: TransferSummary[]) => list.reduce((n, t) => n + t.units, 0);
 
   return (
@@ -143,7 +143,7 @@ function StoreDashboard({ user }: { user: SessionUser }) {
         </section>
         <section className="card span-all">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
-          <ActivityList rows={recentActivity(locationId, 8)} showLocation={false} />
+          <ActivityList rows={await recentActivity(locationId, 8)} showLocation={false} />
         </section>
       </div>
     </>
@@ -161,18 +161,18 @@ interface LocationStock {
   items_in_stock: number;
 }
 
-function AdminDashboard({ user }: { user: SessionUser }) {
-  const totalItems = get<{ n: number }>('SELECT COUNT(*) AS n FROM items WHERE active = 1')!.n;
-  const totalStock = get<{ n: number }>('SELECT COALESCE(SUM(qty), 0) AS n FROM stock')!.n;
-  const byLocation = all<LocationStock>(
+async function AdminDashboard({ user }: { user: SessionUser }) {
+  const totalItems = (await get<{ n: number }>('SELECT COUNT(*) AS n FROM items WHERE active = 1'))!.n;
+  const totalStock = (await get<{ n: number }>('SELECT COALESCE(SUM(qty), 0) AS n FROM stock'))!.n;
+  const byLocation = await all<LocationStock>(
     `SELECT l.id, l.name, l.code, l.type,
             COALESCE(SUM(s.qty), 0) AS units,
             COUNT(CASE WHEN s.qty > 0 THEN 1 END) AS items_in_stock
      FROM locations l LEFT JOIN stock s ON s.location_id = l.id
      GROUP BY l.id
-     HAVING l.active = 1 OR units > 0
+     HAVING l.active = 1 OR COALESCE(SUM(s.qty), 0) > 0
      ORDER BY (l.type = 'warehouse') DESC, units DESC, l.name`);
-  const pending = all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' ORDER BY t.dispatched_at`);
+  const pending = await all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' ORDER BY t.dispatched_at`);
   const maxUnits = Math.max(1, ...byLocation.map((l) => l.units));
   const inTransitUnits = pending.reduce((n, t) => n + t.units, 0);
 
@@ -209,7 +209,7 @@ function AdminDashboard({ user }: { user: SessionUser }) {
         </section>
         <section className="card span-all">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
-          <ActivityList rows={recentActivity(null, 8)} showLocation />
+          <ActivityList rows={await recentActivity(null, 8)} showLocation />
         </section>
       </div>
     </>

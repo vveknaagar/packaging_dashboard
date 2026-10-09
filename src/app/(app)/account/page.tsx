@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: 'My account' };
 
 export default async function AccountPage() {
   const user = await requireUser();
-  const phone = get<{ phone: string }>('SELECT phone FROM users WHERE id = ?', user.id)?.phone;
+  const phone = (await get<{ phone: string }>('SELECT phone FROM users WHERE id = ?', user.id))?.phone;
   return (
     <>
       <PageHead title="My account" />

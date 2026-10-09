@@ -25,11 +25,11 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   if (!isSuper(user)) return <Forbidden />;
   const id = parseId((await params).id);
   // The password hash is deliberately not selected: it must never reach the browser.
-  const target = id ? get<EditableUser>('SELECT id, name, username, phone, role, location_id, active FROM users WHERE id = ?', id) : undefined;
+  const target = id ? await get<EditableUser>('SELECT id, name, username, phone, role, location_id, active FROM users WHERE id = ?', id) : undefined;
   if (!target) notFound();
 
-  const stores = all<{ id: number; name: string; code: string; active: number }>(
-    "SELECT id, name, code, active FROM locations WHERE type = 'store' ORDER BY active DESC, name COLLATE NOCASE");
+  const stores = await all<{ id: number; name: string; code: string; active: number }>(
+    "SELECT id, name, code, active FROM locations WHERE type = 'store' ORDER BY active DESC, name");
 
   return (
     <>

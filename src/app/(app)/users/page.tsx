@@ -25,10 +25,10 @@ export default async function UsersPage() {
   const user = await requireUser();
   if (!isSuper(user)) return <Forbidden />;
 
-  const users = all<UserListRow>(
+  const users = await all<UserListRow>(
     `SELECT u.id, u.name, u.username, u.phone, u.role, u.active, u.created_at, l.name AS location_name
      FROM users u LEFT JOIN locations l ON l.id = u.location_id
-     ORDER BY u.active DESC, CASE u.role WHEN 'super_admin' THEN 0 WHEN 'warehouse_admin' THEN 1 ELSE 2 END, u.name COLLATE NOCASE`);
+     ORDER BY u.active DESC, CASE u.role WHEN 'super_admin' THEN 0 WHEN 'warehouse_admin' THEN 1 ELSE 2 END, u.name`);
 
   return (
     <>

@@ -19,7 +19,7 @@ export async function saveLocationAction(formData: FormData): Promise<ActionResu
     };
     const id = parseId(rawField(formData, 'id'));
     if (id) {
-      locations.updateLocation(user, id, input);
+      await locations.updateLocation(user, id, input);
       return { ok: 'Location updated.', redirectTo: '/locations' };
     }
     const wantsAdmin = field(formData, 'admin_username') !== '' || field(formData, 'admin_name') !== '';
@@ -37,9 +37,9 @@ export async function saveLocationAction(formData: FormData): Promise<ActionResu
 }
 
 export async function setLocationStatusAction(formData: FormData): Promise<ActionResult> {
-  return runAction(['super_admin'], (user) => {
+  return runAction(['super_admin'], async (user) => {
     const active = field(formData, 'active') === '1';
-    locations.setLocationStatus(user, requireId(rawField(formData, 'id'), 'location'), active);
+    await locations.setLocationStatus(user, requireId(rawField(formData, 'id'), 'location'), active);
     return { ok: active ? 'Store activated.' : 'Store deactivated.' };
   });
 }
@@ -76,8 +76,8 @@ export async function saveUserAction(formData: FormData): Promise<ActionResult> 
 /* ---------- notifications ---------- */
 
 export async function markNotificationsReadAction(): Promise<ActionResult> {
-  return runAction(null, (user) => {
-    run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL', now(), user.id);
+  return runAction(null, async (user) => {
+    await run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL', now(), user.id);
     return { ok: 'All notifications marked as read.' };
   });
 }

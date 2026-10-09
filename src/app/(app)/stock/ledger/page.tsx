@@ -56,15 +56,15 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
     LEFT JOIN transfers t ON t.id = g.transfer_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
 
-  const total = get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params)!.n;
+  const total = (await get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, ...params))!.n;
   const pager = paginate(total, param(sp.page), PAGE_SIZE);
-  const rows = all<LedgerRow>(
+  const rows = await all<LedgerRow>(
     `SELECT g.id, g.ts, g.type, g.qty_change, g.qty_before, g.qty_after, g.reason, g.transfer_id,
             t.number AS transfer_number, i.name AS item_name, i.size AS item_size,
             l.name AS location_name, u.name AS user_name
      ${from} ORDER BY g.id DESC LIMIT ? OFFSET ?`,
     ...params, pager.pageSize, pager.offset);
-  const locations = store ? [] : all<LocationRow>("SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, name COLLATE NOCASE");
+  const locations = store ? [] : await all<LocationRow>("SELECT * FROM locations ORDER BY (type = 'warehouse') DESC, name");
   const filtered = !!q || !!type || (!store && !!locationId);
 
   return (

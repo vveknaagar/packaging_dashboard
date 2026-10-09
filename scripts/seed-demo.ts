@@ -5,12 +5,13 @@
  *
  *   npm run seed:demo
  *
- * It refuses to run if any user already exists. All demo accounts share one
+ * It refuses to run once there is real data (stores, items or transfers), or
+ * if a demo username is already taken. An existing Super Admin account is
+ * fine: it is kept and works alongside the demo users. All demo accounts share one
  * password (printed at the end). Do not use demo data for real stock.
  */
 import sharp from 'sharp';
-import { config } from '../src/lib/config';
-import { db, get, warehouseId } from '../src/lib/db';
+import { close, get, warehouseId } from '../src/lib/db';
 import { hashPassword } from '../src/lib/passwords';
 import * as items from '../src/lib/services/items';
 import * as locations from '../src/lib/services/locations';
@@ -43,23 +44,26 @@ async function placeholder(label: string, colour: string): Promise<Buffer> {
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
-function user(id: number): SessionUser {
-  return get<SessionUser>(
+async function user(id: number): Promise<SessionUser> {
+  return (await get<SessionUser>(
     `SELECT u.id, u.name, u.username, u.role, u.location_id, l.name AS location_name, l.type AS location_type
-     FROM users u LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = ?`, id)!;
+     FROM users u LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = ?`, id))!;
 }
 
 async function main() {
-  if (get('SELECT 1 FROM users LIMIT 1')) {
-    console.error(`This database already has users, so demo data was not added.\nData folder: ${config.DATA_DIR}`);
+  const realData = await get("SELECT 1 FROM locations WHERE type = 'store' UNION ALL SELECT 1 FROM items UNION ALL SELECT 1 FROM transfers LIMIT 1");
+  const taken = await get("SELECT 1 FROM users WHERE username IN ('admin', 'warehouse', 'store1', 'store2', 'store3')");
+  if (realData || taken) {
+    console.error('This database already has stores, items, transfers or demo users, so demo data was not added.');
+    await close();
     process.exit(1);
   }
   const hash = await hashPassword(PASSWORD);
-  const add = (name: string, username: string, role: Role, locationId: number | null, phone = '') =>
-    user(insertUser(name, username, hash, role, locationId, phone));
+  const add = async (name: string, username: string, role: Role, locationId: number | null, phone = '') =>
+    user(await insertUser(name, username, hash, role, locationId, phone));
 
-  const admin = add('Demo Super Admin', 'admin', 'super_admin', null);
-  const warehouse = add('Demo Warehouse Admin', 'warehouse', 'warehouse_admin', warehouseId(), '0261 000 0000');
+  const admin = await add('Demo Super Admin', 'admin', 'super_admin', null);
+  const warehouse = await add('Demo Warehouse Admin', 'warehouse', 'warehouse_admin', await warehouseId(), '0261 000 0000');
 
   const storeIds: number[] = [];
   for (const s of [
@@ -67,9 +71,9 @@ async function main() {
     { name: 'Adajan Store', code: 'ADJ', address: 'Adajan, Surat', gstin: '24AAACD1234E2Z0' },
     { name: 'Vesu Store', code: 'VES', address: 'Vesu, Surat', gstin: '24AAACD1234E3Z9' },
   ]) storeIds.push(await locations.createStore(admin, s, null));
-  const store1 = add('Demo Store Admin (Varachha)', 'store1', 'store_admin', storeIds[0], '0261 000 0001');
-  const store2 = add('Demo Store Admin (Adajan)', 'store2', 'store_admin', storeIds[1], '0261 000 0002');
-  add('Demo Store Admin (Vesu)', 'store3', 'store_admin', storeIds[2], '0261 000 0003');
+  const store1 = await add('Demo Store Admin (Varachha)', 'store1', 'store_admin', storeIds[0], '0261 000 0001');
+  const store2 = await add('Demo Store Admin (Adajan)', 'store2', 'store_admin', storeIds[1], '0261 000 0002');
+  await add('Demo Store Admin (Vesu)', 'store3', 'store_admin', storeIds[2], '0261 000 0003');
 
   const itemIds: number[] = [];
   for (const item of ITEMS) {
@@ -77,29 +81,29 @@ async function main() {
       { name: item.name, size: item.size, unit: item.unit },
       await placeholder(item.label, item.colour));
     itemIds.push(id);
-    stock.adjust({ user: warehouse, itemId: id, locationId: warehouse.location_id!, mode: 'in', qty: String(item.open), reason: 'Opening stock' });
+    await stock.adjust({ user: warehouse, itemId: id, locationId: warehouse.location_id!, mode: 'in', qty: String(item.open), reason: 'Opening stock' });
   }
   const line = (index: number, qty: number) => ({ itemId: itemIds[index], qty: String(qty) });
 
   // Received in full.
-  const t1 = transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(0, 300), line(3, 500), line(4, 400), line(6, 30)], note: 'Weekly replenishment', transportMode: 'road_own', transportRef: '', dispatchNow: true });
-  transfers.receive({ user: store1, id: t1, received: Object.fromEntries(transfers.getLines(t1).map((l) => [l.id, String(l.qty_sent)])), remark: '' });
+  const t1 = await transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(0, 300), line(3, 500), line(4, 400), line(6, 30)], note: 'Weekly replenishment', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  await transfers.receive({ user: store1, id: t1, received: Object.fromEntries((await transfers.getLines(t1)).map((l) => [l.id, String(l.qty_sent)])), remark: '' });
   // Received with a discrepancy.
-  const t2 = transfers.create({ user: warehouse, destId: storeIds[1], rawLines: [line(0, 200), line(1, 150), line(5, 6)], note: '', transportMode: 'road_own', transportRef: '', dispatchNow: true });
-  transfers.receive({
+  const t2 = await transfers.create({ user: warehouse, destId: storeIds[1], rawLines: [line(0, 200), line(1, 150), line(5, 6)], note: '', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  await transfers.receive({
     user: store2, id: t2, remark: '10 small boxes arrived crushed',
-    received: Object.fromEntries(transfers.getLines(t2).map((l) => [l.id, String(l.item_id === itemIds[0] ? l.qty_sent - 10 : l.qty_sent)])),
+    received: Object.fromEntries((await transfers.getLines(t2)).map((l) => [l.id, String(l.item_id === itemIds[0] ? l.qty_sent - 10 : l.qty_sent)])),
   });
   // In transit: waiting to be received.
-  transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(1, 120), line(7, 150)], note: 'Festival stock', transportMode: 'road_own', transportRef: '', dispatchNow: true });
-  transfers.create({ user: store1, destId: storeIds[1], rawLines: [line(3, 100)], note: 'Adajan ran short of pouches', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  await transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(1, 120), line(7, 150)], note: 'Festival stock', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  await transfers.create({ user: store1, destId: storeIds[1], rawLines: [line(3, 100)], note: 'Adajan ran short of pouches', transportMode: 'road_own', transportRef: '', dispatchNow: true });
   // A draft.
-  transfers.create({ user: warehouse, destId: storeIds[2], rawLines: [line(4, 300), line(6, 24)], note: 'First stock for Vesu', transportMode: 'road_own', transportRef: '', dispatchNow: false });
+  await transfers.create({ user: warehouse, destId: storeIds[2], rawLines: [line(4, 300), line(6, 24)], note: 'First stock for Vesu', transportMode: 'road_own', transportRef: '', dispatchNow: false });
   // Everyday use at a store.
-  stock.adjust({ user: store1, itemId: itemIds[0], locationId: store1.location_id!, mode: 'out', qty: '140', reason: 'Used for orders' });
+  await stock.adjust({ user: store1, itemId: itemIds[0], locationId: store1.location_id!, mode: 'out', qty: '140', reason: 'Used for orders' });
 
-  db().close();
-  console.log(`Demo data added to ${config.DATA_DIR}\n`);
+  await close();
+  console.log('Demo data added.\n');
   console.log('Sign in with any of these (same password for all):');
   console.log('  admin      Super Admin');
   console.log('  warehouse  Warehouse Admin');

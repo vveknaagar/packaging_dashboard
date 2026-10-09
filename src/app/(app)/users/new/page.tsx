@@ -13,8 +13,8 @@ export default async function NewUserPage({ searchParams }: { searchParams: Prom
   const user = await requireUser();
   if (!isSuper(user)) return <Forbidden />;
   const sp = await searchParams;
-  const stores = all<{ id: number; name: string; code: string; active: number }>(
-    "SELECT id, name, code, active FROM locations WHERE type = 'store' ORDER BY active DESC, name COLLATE NOCASE");
+  const stores = await all<{ id: number; name: string; code: string; active: number }>(
+    "SELECT id, name, code, active FROM locations WHERE type = 'store' ORDER BY active DESC, name");
   // Links such as "Add one" on the Locations screen arrive with the role or the store already chosen.
   const role = param(sp.role);
   const storeId = parseId(param(sp.store)) ?? undefined;

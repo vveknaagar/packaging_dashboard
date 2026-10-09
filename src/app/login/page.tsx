@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Sign in' };
 
 export default async function LoginPage() {
   await connection(); // the answer depends on live data, so never prerender this page
-  if (!hasAnyUser()) redirect('/setup');
+  if (!await hasAnyUser()) redirect('/setup');
   if (await getUser()) redirect('/');
 
   return (

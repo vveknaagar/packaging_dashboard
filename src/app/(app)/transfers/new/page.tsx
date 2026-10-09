@@ -16,13 +16,13 @@ export default async function NewTransferPage({ searchParams }: { searchParams: 
 
   // The Super Admin has no location of their own, so they choose where to send from (the warehouse first).
   const sources = isSuper(user)
-    ? all<{ id: number; name: string }>("SELECT id, name FROM locations WHERE active = 1 ORDER BY (type = 'warehouse') DESC, name COLLATE NOCASE")
+    ? await all<{ id: number; name: string }>("SELECT id, name FROM locations WHERE active = 1 ORDER BY (type = 'warehouse') DESC, name")
     : undefined;
   const from = parseId(param((await searchParams).from));
   const source = sources ? sources.find((s) => s.id === from) ?? sources.at(0) : { id: user.location_id!, name: user.location_name ?? '' };
   if (!source) return <Forbidden />;
   const sourceId = source.id;
-  const destinations = destinationsFor(sourceId);
+  const destinations = await destinationsFor(sourceId);
 
   return (
     <>
@@ -36,7 +36,7 @@ export default async function NewTransferPage({ searchParams }: { searchParams: 
         <TransferForm
           key={sourceId}
           sourceName={source.name} sources={sources} sourceId={sourceId} stockLabel={sources ? 'In stock' : undefined}
-          destinations={destinations} items={transferableItems(sourceId)}
+          destinations={destinations} items={await transferableItems(sourceId)}
         />
       )}
     </>
