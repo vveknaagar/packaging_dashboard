@@ -18,7 +18,7 @@ export default async function SetupPage() {
       <div className="auth-card">
         <div className="brand brand-dark">
           <span className="brand-mark" aria-hidden="true">P</span>
-          <span>Packaging Inventory<br /><small>&amp; Stock Transfer</small></span>
+          <span>Mayave<br /><small>Item Transfer</small></span>
         </div>
         <h1>First-time setup</h1>
         <p className="sub">Create the Super Admin account. This person adds stores, users and items.</p>

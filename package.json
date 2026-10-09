@@ -1,7 +1,7 @@
 {
   "name": "packaging-dashboard",
   "version": "0.1.0",
-  "description": "Packaging Inventory & Stock Transfer dashboard for one warehouse and multiple stores",
+  "description": "Mayave Item Transfer dashboard for one warehouse and multiple stores",
   "private": true,
   "scripts": {
     "dev": "next dev",

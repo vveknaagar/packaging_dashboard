@@ -17,7 +17,7 @@ export default async function LoginPage() {
       <div className="auth-card">
         <div className="brand brand-dark">
           <span className="brand-mark" aria-hidden="true">P</span>
-          <span>Packaging Inventory<br /><small>&amp; Stock Transfer</small></span>
+          <span>Mayave<br /><small>Item Transfer</small></span>
         </div>
         <h1>Sign in</h1>
         <ActionForm action={loginAction} className="stack">

@@ -34,7 +34,7 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
 
       <header className="slip-head">
         <div>
-          <div className="slip-app">Packaging Inventory &amp; Stock Transfer</div>
+          <div className="slip-app">Mayave Item Transfer</div>
           <h1>Stock Transfer Slip</h1>
         </div>
         <div className="slip-number">

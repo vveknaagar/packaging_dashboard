@@ -1,4 +1,4 @@
-# Packaging Inventory & Stock Transfer
+# Mayave Item Transfer
 
 A web dashboard for managing packaging material across one central warehouse and multiple stores.
 Built with Next.js (App Router), React and Postgres (hosted on Supabase). Works on desktop and on phones.

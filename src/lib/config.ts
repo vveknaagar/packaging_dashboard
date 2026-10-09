@@ -37,4 +37,4 @@ export const config = {
   MAX_BULK_ROWS: 2000,
 };
 
-export const APP_NAME = 'Packaging Inventory & Stock Transfer';
+export const APP_NAME = 'Mayave Item Transfer';

@@ -51,7 +51,7 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
       <aside className={`sidebar${open ? ' open' : ''}`}>
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">P</span>
-          <span>Packaging Inventory<br /><small>&amp; Stock Transfer</small></span>
+          <span>Mayave<br /><small>Item Transfer</small></span>
         </div>
         <nav className="nav" aria-label="Main">
           {nav.map((item) => {

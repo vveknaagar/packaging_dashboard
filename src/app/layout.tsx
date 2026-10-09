@@ -5,8 +5,8 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Packaging Inventory & Stock Transfer',
-    template: '%s · Packaging Inventory',
+    default: 'Mayave Item Transfer',
+    template: '%s · Mayave Item Transfer',
   },
   description: 'Packaging material stock and transfers across the warehouse and stores.',
   robots: { index: false, follow: false },
