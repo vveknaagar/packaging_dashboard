@@ -366,6 +366,8 @@ a.row-link:hover { background: var(--hover-soft); text-decoration: none; }
   .table.cards-wide td.cell-actions > :not(dialog) { margin: 0 6px 0 0; }
 }
 
+/* No left padding: scrolled location names would show through the gap beside the pinned item column. */
+.matrix-wrap { margin-left: 0; padding-left: 0; }
 .matrix th, .matrix td { white-space: nowrap; }
 .matrix .sticky-col { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 190px; max-width: 250px; white-space: normal; box-shadow: 1px 0 0 var(--line); }
 /* On a phone the pinned item column gives way to the numbers. */
