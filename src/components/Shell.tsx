@@ -7,6 +7,8 @@ import { logoutAction, switchUserAction } from '@/app/actions/auth';
 import { Flash } from './Flash';
 import { LiveRefresh } from './LiveRefresh';
 import { ThemeToggle } from './ThemeToggle';
+import { Tour } from './Tour';
+import type { TourStep } from '@/lib/guide';
 
 export interface NavItem {
   href: string;
@@ -24,6 +26,8 @@ interface Props {
   pending: number;
   /** Only for a Super Admin: the users they can switch to, and their own name while they act as someone else. */
   switcher?: { users: { id: number; label: string }[]; currentId: number; ownerName: string | null };
+  /** The guided tour of this user's menu; it opens by itself on their first visit. */
+  tour: { steps: TourStep[]; autoStart: boolean };
   children: React.ReactNode;
 }
 
@@ -37,7 +41,7 @@ function activeHref(nav: NavItem[], pathname: string): string {
   return best;
 }
 
-export function Shell({ nav, userName, roleLabel, locationName, unread, pending, switcher, children }: Props) {
+export function Shell({ nav, userName, roleLabel, locationName, unread, pending, switcher, tour, children }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const active = activeHref(nav, pathname);
@@ -60,7 +64,7 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
             return (
               <div key={item.href}>
                 {heading && <div className="nav-section">{heading}</div>}
-                <Link href={item.href} className={item.href === active ? 'active' : undefined} aria-current={item.href === active ? 'page' : undefined}>
+                <Link href={item.href} data-tour={item.href} className={item.href === active ? 'active' : undefined} aria-current={item.href === active ? 'page' : undefined}>
                   {item.label}
                 </Link>
               </div>
@@ -74,7 +78,7 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
           </div>
           {switcher && (
             // Remounted after each switch so the list goes back to its "Switch user" prompt.
-            <form action={switchUserAction} className="switcher" key={switcher.currentId}>
+            <form action={switchUserAction} className="switcher" key={switcher.currentId} data-tour="switcher">
               <select
                 name="user_id" defaultValue="" aria-label="Switch user"
                 onChange={(e) => e.currentTarget.form?.requestSubmit()}
@@ -84,7 +88,7 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
               </select>
             </form>
           )}
-          <Link href="/account" className="btn btn-ghost btn-sm">My account</Link>
+          <Link href="/account" className="btn btn-ghost btn-sm" data-tour="account">My account</Link>
           <form action={logoutAction}>
             <button type="submit" className="btn btn-ghost btn-sm">Sign out</button>
           </form>
@@ -109,6 +113,7 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
           <Link
             href="/notifications"
             className={`bell${pending > 0 ? ' bell-pending' : ''}`}
+            data-tour="bell"
             aria-label={[unread ? `${unread} unread notifications` : 'Notifications', pending ? `${pending} pending approval` : '']
               .filter(Boolean).join(', ')}
           >
@@ -129,6 +134,7 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
         )}
         <main className="content">{children}</main>
       </div>
+      <Tour steps={tour.steps} autoStart={tour.autoStart} setMenuOpen={setOpen} />
       <Flash />
       <LiveRefresh />
     </div>

@@ -1,28 +1,47 @@
 'use server';
 
 import { runAction } from '@/lib/action';
+import { audit, itemLabel } from '@/lib/audit';
+import { all, get } from '@/lib/db';
 import { config } from '@/lib/config';
 import { AppError } from '@/lib/errors';
 import * as stock from '@/lib/services/stock';
 import * as transfers from '@/lib/services/transfers';
 import type { ActionResult } from '@/lib/types';
-import { field, parseId, rawField, requireId } from '@/lib/util';
+import { field, fmtNum, parseId, rawField, requireId } from '@/lib/util';
 
 // Every role can reach these; the services decide which location each one may act for.
 const STOCK_ROLES = ['super_admin', 'warehouse_admin', 'store_admin'] as const;
+
+/** "TR-0012" and "Warehouse → Varachha Store · Kraft Box (Small) × 300, ..." for the audit log. */
+async function transferInfo(id: number, received = false) {
+  const t = await get<{ number: string; source: string; dest: string }>(
+    `SELECT t.number, s.name AS source, d.name AS dest FROM transfers t
+     JOIN locations s ON s.id = t.source_id JOIN locations d ON d.id = t.dest_id WHERE t.id = ?`, id);
+  const lines = await all<{ name: string; size: string; qty_sent: number; qty_received: number | null }>(
+    `SELECT i.name, i.size, ti.qty_sent, ti.qty_received FROM transfer_items ti JOIN items i ON i.id = ti.item_id
+     WHERE ti.transfer_id = ? ORDER BY i.name, i.size`, id);
+  const list = lines.map((l) => `${l.name} (${l.size}) × ${fmtNum(l.qty_sent)}${received && l.qty_received !== l.qty_sent ? ` (received ${fmtNum(l.qty_received)})` : ''}`).join(', ');
+  return { number: t?.number ?? `Transfer #${id}`, route: t ? `${t.source} → ${t.dest}` : '', list };
+}
 
 /** Stock In, Stock Out or Adjustment at the user's own location (any location for the Super Admin). */
 export async function adjustStockAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
     const mode = field(formData, 'mode');
+    const itemId = requireId(rawField(formData, 'item_id'), 'item');
+    const locationId = requireId(rawField(formData, 'location_id'), 'location');
     const result = await stock.adjust({
       user,
-      itemId: requireId(rawField(formData, 'item_id'), 'item'),
-      locationId: requireId(rawField(formData, 'location_id'), 'location'),
+      itemId,
+      locationId,
       mode,
       qty: rawField(formData, 'qty'),
       reason: rawField(formData, 'reason'),
     });
+    const location = await get<{ name: string }>('SELECT name FROM locations WHERE id = ?', locationId);
+    await audit(user, mode === 'in' ? 'stock_in' : mode === 'out' ? 'stock_out' : 'stock_set', await itemLabel(itemId),
+      `${location?.name ?? ''}: ${fmtNum(result.before)} → ${fmtNum(result.after)}. Reason: ${field(formData, 'reason') || '(none)'}`);
     return { ok: `Stock updated: ${result.before} to ${result.after}.` };
   });
 }
@@ -63,6 +82,8 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
     };
     const existingId = parseId(rawField(formData, 'id'));
     const id = existingId ? await transfers.updateDraft({ ...input, id: existingId }) : await transfers.create(input);
+    const info = await transferInfo(id);
+    await audit(user, dispatchNow ? 'transfer_dispatched' : 'transfer_draft', info.number, `${info.route} · ${info.list}`);
     return {
       ok: dispatchNow ? 'Transfer dispatched. Stock is now in transit.' : 'Draft saved.',
       redirectTo: `/transfers/${id}`,
@@ -72,7 +93,10 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
 
 export async function dispatchTransferAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
-    await transfers.dispatch({ user, id: requireId(rawField(formData, 'id'), 'transfer'), parcelPhoto: await parcelPhotoFrom(formData) });
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    await transfers.dispatch({ user, id, parcelPhoto: await parcelPhotoFrom(formData) });
+    const info = await transferInfo(id);
+    await audit(user, 'transfer_dispatched', info.number, `${info.route} · ${info.list}`);
     return { ok: 'Transfer dispatched. Stock is now in transit.' };
   });
 }
@@ -85,12 +109,17 @@ export async function receiveTransferAction(formData: FormData): Promise<ActionR
       const match = /^recv_(\d{1,9})$/.exec(key);
       if (match) received[Number(match[1])] = value;
     }
+    const id = requireId(rawField(formData, 'id'), 'transfer');
     const status = await transfers.receive({
       user,
-      id: requireId(rawField(formData, 'id'), 'transfer'),
+      id,
       received,
       remark: rawField(formData, 'remark'),
     });
+    const info = await transferInfo(id, true);
+    const remark = field(formData, 'remark');
+    await audit(user, status === 'discrepancy' ? 'transfer_discrepancy' : 'transfer_received', info.number,
+      `${info.route} · ${info.list}${remark ? `. Remark: ${remark}` : ''}`);
     return {
       ok: status === 'discrepancy'
         ? 'Received with discrepancy. Only the received quantities were added and the Warehouse Admin has been notified.'
@@ -101,14 +130,20 @@ export async function receiveTransferAction(formData: FormData): Promise<ActionR
 
 export async function rejectTransferAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
-    await transfers.reject({ user, id: requireId(rawField(formData, 'id'), 'transfer'), reason: rawField(formData, 'reason') });
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    await transfers.reject({ user, id, reason: rawField(formData, 'reason') });
+    const info = await transferInfo(id);
+    await audit(user, 'transfer_rejected', info.number, `${info.route}. Reason: ${field(formData, 'reason')}`);
     return { ok: 'Transfer rejected. Stock has been returned to the source.' };
   });
 }
 
 export async function cancelTransferAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
-    await transfers.cancel({ user, id: requireId(rawField(formData, 'id'), 'transfer'), reason: rawField(formData, 'reason') });
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    await transfers.cancel({ user, id, reason: rawField(formData, 'reason') });
+    const info = await transferInfo(id);
+    await audit(user, 'transfer_cancelled', info.number, `${info.route}${field(formData, 'reason') ? `. Reason: ${field(formData, 'reason')}` : ''}`);
     return { ok: 'Transfer cancelled.' };
   });
 }

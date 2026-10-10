@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { runAction } from '@/lib/action';
-import { get, run, tx } from '@/lib/db';
+import { audit } from '@/lib/audit';
+import { get, now, run, tx } from '@/lib/db';
 import { AppError } from '@/lib/errors';
 import { checkPassword, hashPassword } from '@/lib/passwords';
 import { canSwitchUsers } from '@/lib/permissions';
@@ -13,8 +14,15 @@ import {
   hasAnyUser, isLoginThrottled, recordLoginFailure, setActingAs, setFlash,
 } from '@/lib/session';
 import { capitalizeFirst } from '@/lib/text';
-import type { ActionResult, UserRow } from '@/lib/types';
+import type { ActionResult, SessionUser, UserRow } from '@/lib/types';
 import { field, parseId, rawField } from '@/lib/util';
+
+/** The user as the audit log records them, for screens that run before a session exists. */
+async function auditUser(id: number): Promise<SessionUser | null> {
+  return (await get<SessionUser>(
+    `SELECT u.id, u.name, u.username, u.role, u.location_id, l.name AS location_name, l.type AS location_type
+     FROM users u LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = ?`, id)) ?? null;
+}
 
 /** First-time setup: create the Super Admin. Works only while no user exists. */
 export async function setupAction(formData: FormData): Promise<ActionResult> {
@@ -31,6 +39,7 @@ export async function setupAction(formData: FormData): Promise<ActionResult> {
       return insertUser(name, username, hash, 'super_admin', null);
     });
     await createSession(userId);
+    await audit(await auditUser(userId), 'setup', username, 'Super Admin account created');
     await setFlash('Super Admin account created. Next, add your stores, users and items.');
   } catch (err) {
     if (err instanceof AppError) return { error: err.message };
@@ -45,16 +54,20 @@ export async function loginAction(formData: FormData): Promise<ActionResult> {
   const password = rawField(formData, 'password');
   try {
     if (await isLoginThrottled(username)) {
+      await audit(null, 'login_failed', username, 'Blocked: too many failed attempts', { name: username });
       return { error: 'Too many failed attempts. Please wait 15 minutes and try again.' };
     }
     const user = await get<UserRow>('SELECT * FROM users WHERE username = ?', username);
     const ok = await checkPassword(password, user?.password_hash);
     if (!user || !ok || !user.active) {
       await recordLoginFailure(username);
+      const why = !user ? 'No such username' : !ok ? 'Wrong password' : 'Account is deactivated';
+      await audit(user ? await auditUser(user.id) : null, 'login_failed', username, why, { name: username });
       return { error: 'Wrong username or password.' };
     }
     await clearLoginFailures(username);
     await createSession(user.id);
+    await audit(await auditUser(user.id), 'login', username);
   } catch (err) {
     console.error(err);
     return { error: 'Something went wrong. Please try again.' };
@@ -63,6 +76,8 @@ export async function loginAction(formData: FormData): Promise<ActionResult> {
 }
 
 export async function logoutAction(): Promise<void> {
+  const user = await getUser();
+  if (user) await audit(user, 'logout', user.username);
   await destroySession();
   redirect('/login');
 }
@@ -82,10 +97,12 @@ export async function switchUserAction(formData: FormData): Promise<void> {
     const target = await get<{ id: number; name: string; active: number }>('SELECT id, name, active FROM users WHERE id = ?', targetId);
     if (target?.active) {
       await setActingAs(target.id);
+      await audit(user, 'switch_user', target.name, `Now using the app as ${target.name}`);
       await setFlash(`You are now using the app as ${target.name}.`);
     }
   } else {
     await setActingAs(null);
+    if (user.switched_from) await audit(user, 'switch_back', user.switched_from.name, `Stopped using the app as ${user.name}`);
     await setFlash('You are back in your own account.');
   }
   // Every screen depends on who is looking, so drop anything cached for the previous user.
@@ -103,6 +120,14 @@ export async function changePasswordAction(formData: FormData): Promise<ActionRe
     if (password !== rawField(formData, 'confirm')) throw new AppError('The two new passwords do not match.');
     await run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(password), user.id);
     await destroyOtherSessions(user.id);
+    await audit(user, 'password_changed', user.username, 'Other sessions were signed out');
     return { ok: 'Password changed.' };
   });
+}
+
+/** The first-login tour was finished or skipped. A Super Admin looking through someone else's account leaves theirs alone. */
+export async function finishTourAction(): Promise<void> {
+  const user = await getUser();
+  if (!user || user.switched_from) return;
+  await run('UPDATE users SET tour_done_at = ? WHERE id = ? AND tour_done_at IS NULL', now(), user.id);
 }

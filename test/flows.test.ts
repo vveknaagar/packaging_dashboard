@@ -634,3 +634,33 @@ describe('bulk upload', () => {
     assert.ok(await images.readStored(updated.image));
   });
 });
+
+describe('audit log', () => {
+  test('records who did what, notes a Super Admin acting as someone, filters, and cannot be changed', async () => {
+    const audit = await import('../src/lib/audit');
+    await audit.audit(storeA, 'stock_out', 'Kraft Box (Small)', 'Store A: 10 → 5');
+    await audit.audit({ ...whAdmin, switched_from: { id: superAdmin.id, name: superAdmin.name } }, 'transfer_dispatched', 'TR-9', 'Central Warehouse → Store A');
+    await audit.audit(null, 'login_failed', 'nobody', 'No such username', { name: 'nobody' });
+
+    const rows = await db.all<import('../src/lib/audit').AuditRow & { by_user_id: number | null }>('SELECT * FROM audit_log ORDER BY id');
+    const out = rows.find((r) => r.action === 'stock_out')!;
+    assert.equal(out.user_name, 'Asha');
+    assert.equal(out.location_name, 'Store A');
+    const acted = rows.find((r) => r.action === 'transfer_dispatched')!;
+    assert.equal(acted.user_id, whAdmin.id);
+    assert.equal(acted.by_user_id, superAdmin.id);
+    assert.equal(rows.find((r) => r.action === 'login_failed')!.user_id, null);
+
+    const count = async (f: Partial<Record<string, string>>) => {
+      const { where, params } = audit.filterSql(audit.readFilters((n) => f[n] ?? ''));
+      return (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log a ${where}`, ...params))!.n;
+    };
+    assert.equal(await count({ user: String(superAdmin.id) }), 1, 'a user filter includes what they did through other accounts');
+    assert.equal(await count({ action: 'group:Stock' }), 1);
+    assert.equal(await count({ q: 'tr-9' }), 1);
+    assert.equal(await count({ action: 'not_an_action' }), 3, 'an unknown activity is ignored');
+
+    await assert.rejects(refusedSql('UPDATE audit_log SET detail = ? WHERE id = ?', 'edited', out.id));
+    await assert.rejects(refusedSql('DELETE FROM audit_log WHERE id = ?', out.id));
+  });
+});

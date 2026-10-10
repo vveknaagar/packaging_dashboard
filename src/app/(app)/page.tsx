@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Empty, PageHead, StatusBadge } from '@/components/ui';
 import { all, get } from '@/lib/db';
-import { canCreateTransfer, isStore } from '@/lib/permissions';
+import { canCreateTransfer, isStore, isSuper } from '@/lib/permissions';
 import { LEDGER_LABELS } from '@/lib/services/stock';
 import { requireUser } from '@/lib/session';
 import type { LedgerType, SessionUser, TransferStatus } from '@/lib/types';
@@ -54,6 +54,9 @@ function recentActivity(locationId: number | null, limit: number): Promise<Activ
     ORDER BY g.id DESC LIMIT ?`;
   return locationId ? all<Activity>(sql, locationId, limit) : all<Activity>(sql, limit);
 }
+
+/** Whole rupees for the dashboard, e.g. 1234550 paise to "₹12,346". */
+const rupees = (paise: number) => `₹${fmtNum(Math.round(paise / 100))}`;
 
 /* ---------- shared pieces ---------- */
 
@@ -110,19 +113,69 @@ function ActivityList({ rows, showLocation }: { rows: Activity[]; showLocation: 
   );
 }
 
+interface ItemValue {
+  id: number;
+  name: string;
+  size: string;
+  qty: number;
+  value_paise: number | null;
+}
+
+/** One location's stock as an amount, item by item. Items without a price have a null value. */
+function itemValues(locationId: number): Promise<ItemValue[]> {
+  return all<ItemValue>(
+    `SELECT i.id, i.name, i.size, s.qty, s.qty * i.price_paise AS value_paise
+     FROM stock s JOIN items i ON i.id = s.item_id
+     WHERE s.location_id = ? AND s.qty > 0
+     ORDER BY value_paise DESC NULLS LAST, i.name`, locationId);
+}
+
+const SHOWN_ITEMS = 8;
+
+/** "Stock value by item" for one location: the most valuable items, and what is left uncounted. */
+function ItemValueCard({ rows, locationName, wide }: { rows: ItemValue[]; locationName: string; wide?: boolean }) {
+  const total = rows.reduce((n, r) => n + (r.value_paise ?? 0), 0);
+  const unpriced = rows.filter((r) => r.value_paise === null).reduce((n, r) => n + r.qty, 0);
+  const shown = rows.filter((r) => r.value_paise).slice(0, SHOWN_ITEMS);
+  const rest = rows.filter((r) => r.value_paise).length - shown.length;
+  const max = Math.max(1, ...shown.map((r) => r.value_paise!));
+  return (
+    <section className={`card${wide ? ' span-all' : ''}`}>
+      <div className="card-head"><h2>Stock value by item</h2><span className="muted">{rupees(total)} at {locationName}</span></div>
+      {total === 0 ? <Empty>{rows.length ? 'Prices have not been set yet. Ask the Super Admin.' : 'No stock here yet.'}</Empty> : (
+        <ul className="bar-list" aria-label={`Value of stock at ${locationName} by item`}>
+          {shown.map((r) => (
+            <li key={r.id}>
+              <Link href={`/stock/items/${r.id}`} className="bar-row" title={`${r.name} (${r.size}): ${fmtNum(r.qty)} units, ${rupees(r.value_paise!)}`}>
+                <span className="bar-label">{r.name} <span className="muted">· {r.size}</span></span>
+                <span className="bar-track"><span className="bar-fill bar-fill-value" style={{ width: `${(r.value_paise! / max) * 100}%` }} /></span>
+                <span className="bar-value">{rupees(r.value_paise!)}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {rest > 0 && <p className="hint">and {rest} more item(s). <Link href="/stock">See all stock</Link></p>}
+      {unpriced > 0 && total > 0 && <p className="hint">{fmtNum(unpriced)} unit(s) have no price yet and are not counted.</p>}
+    </section>
+  );
+}
+
 /* ---------- Store Admin ---------- */
 
 async function StoreDashboard({ user }: { user: SessionUser }) {
   const locationId = user.location_id!;
-  const [summaryRow, incoming, outgoing, activity] = await Promise.all([
+  const [summaryRow, incoming, outgoing, activity, values] = await Promise.all([
     get<{ items_in_stock: number; units: number }>(
       `SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items_in_stock, COALESCE(SUM(qty), 0) AS units
        FROM stock WHERE location_id = ?`, locationId),
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.dest_id = ? ORDER BY t.dispatched_at`, locationId),
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.source_id = ? ORDER BY t.dispatched_at`, locationId),
     recentActivity(locationId, 8),
+    itemValues(locationId),
   ]);
   const summary = summaryRow!;
+  const value = values.reduce((n, r) => n + (r.value_paise ?? 0), 0);
   const sum = (list: TransferSummary[]) => list.reduce((n, t) => n + t.units, 0);
 
   return (
@@ -133,6 +186,7 @@ async function StoreDashboard({ user }: { user: SessionUser }) {
       <div className="tiles">
         <Tile label="Items in stock" value={fmtNum(summary.items_in_stock)} href="/stock?view=instock" />
         <Tile label="Total stock" value={fmtNum(summary.units)} note="units on hand" href="/stock" />
+        <Tile label="Stock value" value={rupees(value)} note="of the stock in your store" href="/stock" />
         <Tile label="Pending your approval" value={fmtNum(incoming.length)} note={`${fmtNum(sum(incoming))} unit(s) on the way`} href="/transfers?view=incoming&status=dispatched" />
         <Tile label="Outgoing in transit" value={fmtNum(outgoing.length)} note={`${fmtNum(sum(outgoing))} unit(s) sent, not yet received`} href="/transfers?view=outgoing&status=dispatched" />
       </div>
@@ -145,7 +199,8 @@ async function StoreDashboard({ user }: { user: SessionUser }) {
           <div className="card-head"><h2>Outgoing in transit</h2><Link href="/transfers?view=outgoing">View all</Link></div>
           <TransferList transfers={outgoing} empty="Nothing you sent is in transit." />
         </section>
-        <section className="card span-all">
+        <ItemValueCard rows={values} locationName={user.location_name ?? 'your store'} />
+        <section className="card">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
           <ActivityList rows={activity} showLocation={false} />
         </section>
@@ -163,28 +218,44 @@ interface LocationStock {
   type: string;
   units: number;
   items_in_stock: number;
+  /** Units on hand times each item's price. Items without a price count as nothing. */
+  value_paise: number;
+  /** Units on hand of items that have no price yet. */
+  unpriced_units: number;
 }
 
 async function AdminDashboard({ user }: { user: SessionUser }) {
   // Independent lookups go to the database together rather than one after another.
-  const [totals, byLocation, pending, activity] = await Promise.all([
+  // The Super Admin sees stock value store by store; a Warehouse Admin, like a Store Admin, only for their own location.
+  const storeWise = isSuper(user);
+  const [totals, byLocation, pending, activity, ownValues] = await Promise.all([
     get<{ items: number; units: number }>(
       'SELECT (SELECT COUNT(*) FROM items WHERE active = 1) AS items, (SELECT COALESCE(SUM(qty), 0) FROM stock) AS units'),
     all<LocationStock>(
       `SELECT l.id, l.name, l.code, l.type,
               COALESCE(SUM(s.qty), 0) AS units,
-              COUNT(CASE WHEN s.qty > 0 THEN 1 END) AS items_in_stock
-       FROM locations l LEFT JOIN stock s ON s.location_id = l.id
+              COUNT(CASE WHEN s.qty > 0 THEN 1 END) AS items_in_stock,
+              COALESCE(SUM(s.qty * i.price_paise), 0) AS value_paise,
+              COALESCE(SUM(CASE WHEN i.price_paise IS NULL THEN s.qty END), 0) AS unpriced_units
+       FROM locations l LEFT JOIN stock s ON s.location_id = l.id LEFT JOIN items i ON i.id = s.item_id
        GROUP BY l.id
        HAVING l.active = 1 OR COALESCE(SUM(s.qty), 0) > 0
        ORDER BY (l.type = 'warehouse') DESC, units DESC, l.name`),
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' ORDER BY t.dispatched_at`),
     recentActivity(null, 8),
+    !storeWise && user.location_id ? itemValues(user.location_id) : null,
   ]);
   const totalItems = totals!.items;
   const totalStock = totals!.units;
   const maxUnits = Math.max(1, ...byLocation.map((l) => l.units));
   const inTransitUnits = pending.reduce((n, t) => n + t.units, 0);
+  const showValue = storeWise;
+  const ownValue = ownValues?.reduce((n, r) => n + (r.value_paise ?? 0), 0) ?? 0;
+  const byValue = [...byLocation].sort((a, b) => b.value_paise - a.value_paise);
+  const totalValue = byLocation.reduce((n, l) => n + l.value_paise, 0);
+  const storeValue = byLocation.filter((l) => l.type === 'store').reduce((n, l) => n + l.value_paise, 0);
+  const maxValue = Math.max(1, ...byLocation.map((l) => l.value_paise));
+  const unpriced = byLocation.reduce((n, l) => n + l.unpriced_units, 0);
 
   return (
     <>
@@ -194,6 +265,8 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
       <div className="tiles">
         <Tile label="Total items" value={fmtNum(totalItems)} note="active in the item list" href="/items" />
         <Tile label="Total stock" value={fmtNum(totalStock)} note="units across all locations" href="/stock/matrix" />
+        {showValue && <Tile label="Stock value" value={rupees(totalValue)} note={`${rupees(storeValue)} of it in stores`} href="/pricing" />}
+        {ownValues && <Tile label="Stock value" value={rupees(ownValue)} note={`of the stock at ${user.location_name}`} href="/stock" />}
         <Tile label="Transfers in transit" value={fmtNum(pending.length)} note={`${fmtNum(inTransitUnits)} unit(s) on the way`} href="/transfers?view=all&status=dispatched" />
       </div>
       <div className="grid-2">
@@ -213,10 +286,37 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
             </ul>
           )}
         </section>
-        <section className="card">
+        {showValue && (
+          <section className="card">
+            <div className="card-head"><h2>Stock value by location</h2><Link href="/pricing">Price &amp; HSN</Link></div>
+            {totalValue === 0 ? <Empty>{totalStock === 0 ? 'No stock has been recorded yet.' : 'Set item prices on the Price & HSN screen to see stock value.'}</Empty> : (
+              <ul className="bar-list" aria-label="Value of stock by location">
+                {byValue.map((l) => (
+                  <li key={l.id}>
+                    <Link
+                      href={`/stock?location=${l.id}`} className="bar-row"
+                      title={`${l.name}: ${rupees(l.value_paise)} for ${fmtNum(l.units)} units, ${Math.round((l.value_paise / totalValue) * 100)}% of all stock value`}
+                    >
+                      <span className="bar-label">{l.name}</span>
+                      <span className="bar-track"><span className="bar-fill bar-fill-value" style={{ width: `${(l.value_paise / maxValue) * 100}%` }} /></span>
+                      <span className="bar-value">{rupees(l.value_paise)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {unpriced > 0 && totalStock > 0 && (
+              <p className="hint">
+                {fmtNum(unpriced)} unit(s) have no price yet and are not counted. <Link href="/pricing?missing=1">Set prices</Link>
+              </p>
+            )}
+          </section>
+        )}
+        <section className={`card${showValue ? ' span-all' : ''}`}>
           <div className="card-head"><h2>Pending approval</h2><Link href="/transfers?view=all&status=dispatched">View all</Link></div>
           <TransferList transfers={pending.slice(0, 6)} empty="No transfers are waiting for approval." />
         </section>
+        {ownValues && <ItemValueCard rows={ownValues} locationName={user.location_name ?? 'your location'} wide />}
         <section className="card span-all">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
           <ActivityList rows={activity} showLocation />

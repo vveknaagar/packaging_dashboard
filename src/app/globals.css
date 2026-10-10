@@ -444,6 +444,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .toolbar.card { padding: 12px; }
 .card > .toolbar { margin-bottom: 12px; }
 .toolbar input[type="search"] { flex: 1 1 200px; }
+.toolbar-date { display: flex; align-items: center; gap: 6px; font-size: 0.88rem; color: var(--muted); }
+.toolbar-date input { width: auto; }
+.audit-detail { white-space: pre-line; min-width: 220px; max-width: 520px; font-size: 0.9rem; }
+.audit-failed td:first-child { box-shadow: inset 3px 0 0 var(--warn-ink); }
 .toolbar select { flex: 1 1 150px; width: auto; }
 @media (min-width: 640px) { .toolbar select { flex: 0 1 190px; } }
 
@@ -572,3 +576,42 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   :root:not([data-theme="light"]) .theme-toggle .theme-moon { display: none; }
   :root:not([data-theme="light"]) .theme-toggle .theme-sun { display: block; }
 }
+
+/* ---------- first-login tour ---------- */
+
+.tour-layer { position: fixed; inset: 0; z-index: 100; }
+.tour-dim { background: rgba(10, 14, 20, 0.6); }
+.tour-spot {
+  position: fixed; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--series), 0 0 0 9999px rgba(10, 14, 20, 0.6);
+  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
+}
+.tour-bubble {
+  position: fixed; width: min(340px, calc(100vw - 32px));
+  padding: 16px; border-radius: 14px;
+  background: var(--surface); color: var(--ink); box-shadow: 0 20px 50px rgba(15, 20, 28, 0.35);
+}
+.tour-bubble.tour-center { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.tour-bubble.tour-bottom { left: 16px; right: 16px; bottom: 16px; width: auto; }
+.tour-bubble.tour-top { left: 16px; right: 16px; top: 16px; width: auto; }
+@media (min-width: 640px) {
+  .tour-bubble.tour-bottom, .tour-bubble.tour-top { left: auto; right: 24px; width: 340px; }
+}
+.tour-bubble h2 { margin: 2px 0 6px; font-size: 1.08rem; }
+.tour-bubble p { margin: 0 0 14px; color: var(--ink-2); line-height: 1.45; }
+.tour-count { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tour-actions { display: flex; align-items: center; gap: 8px; }
+.tour-spacer { flex: 1; }
+
+/* ---------- user guide ---------- */
+
+.guide-toc { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; }
+.guide-toc a { display: inline-block; padding: 5px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--info-ink); font-size: 0.88rem; }
+.guide-toc a:hover { text-decoration: none; background: var(--hover); }
+.guide-section { scroll-margin-top: 70px; }
+.guide-section h2 { margin: 0 0 4px; }
+.guide-section .summary { margin: 0 0 10px; color: var(--ink-2); }
+.guide-section ol { margin: 0; padding-left: 22px; line-height: 1.55; }
+.guide-section ol li + li { margin-top: 4px; }
+.guide-tip { margin: 12px 0 0; padding: 8px 12px; border-left: 3px solid var(--series); background: var(--accent-soft); border-radius: 6px; color: var(--info-ink); font-size: 0.92rem; }
+.bar-fill-value { background: var(--good); }
