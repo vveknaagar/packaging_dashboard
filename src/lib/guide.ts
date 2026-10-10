@@ -99,7 +99,7 @@ const ALL: Record<string, GuideSection> = {
     steps: [
       'Click New transfer and choose where the stock is going.',
       'Enter the quantity for each item you are sending. You cannot send more than you have.',
-      'Choose how it is being sent (own vehicle, transporter, courier...) and add the tracking or vehicle number.',
+      'Choose how it is being sent (own vehicle, transporter, courier...), pick the logistic partner if a courier or transport company carries it, and add the tracking or vehicle number.',
       'Take a photo of the packed parcel and add it under Parcel photo. On a phone, this opens the camera.',
       'Click Dispatch. The stock is taken out of your location and shows as in transit. Or click Save draft to finish later.',
     ],
@@ -139,6 +139,16 @@ const ALL: Record<string, GuideSection> = {
       'Open Locations and click Add store. Enter the name, a short code, the address and the GSTIN.',
       'You can create the Store Admin for the new store on the same form.',
       'To stop using a store, Deactivate it. It must have no transfers in transit first.',
+    ],
+  },
+  logistics: {
+    id: 'logistics', href: '/logistics', title: 'Logistic partners',
+    summary: 'The courier and transport companies senders choose from on a transfer. Only you can change this list.',
+    steps: [
+      'Open Logistic partners. Enter the company name, and a contact person and phone if you have them, then click Add partner.',
+      'To change one, click Edit, make the change and click Save changes.',
+      'If you stop using a company, Deactivate it. Senders can no longer choose it, and past transfers still show it.',
+      'Senders pick the partner on the New transfer form. It is printed on the transfer slip.',
     ],
   },
   users: {
@@ -188,7 +198,7 @@ const ALL: Record<string, GuideSection> = {
 
 const ORDER: Record<Role, string[]> = {
   super_admin: ['dashboard', 'itemsAdmin', 'stock', 'matrix', 'ledger', 'pricing', 'transfers', 'newTransfer', 'receive',
-    'notifications', 'locationsAdmin', 'users', 'switchUser', 'audit', 'account', 'guide'],
+    'notifications', 'locationsAdmin', 'users', 'logistics', 'switchUser', 'audit', 'account', 'guide'],
   warehouse_admin: ['dashboard', 'stock', 'matrix', 'ledger', 'items', 'transfers', 'newTransfer', 'receive',
     'notifications', 'locations', 'account', 'guide'],
   store_admin: ['dashboard', 'stock', 'ledger', 'items', 'transfers', 'newTransfer', 'receive', 'notifications', 'account', 'guide'],

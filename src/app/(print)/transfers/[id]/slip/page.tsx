@@ -33,9 +33,13 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
       </div>
 
       <header className="slip-head">
-        <div>
-          <div className="slip-app">Mayave Item Transfer</div>
-          <h1>Stock Transfer Slip</h1>
+        <div className="slip-brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="slip-logo" src="/slip-logo.png" alt="Mayavé" />
+          <div>
+            <div className="slip-app">Mayave Item Transfer</div>
+            <h1>Stock Transfer Slip</h1>
+          </div>
         </div>
         <div className="slip-number">
           <strong>{t.number}</strong>
@@ -61,6 +65,7 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
         <div>
           <h2>Transport</h2>
           <div>Mode: {TRANSPORT_MODES[t.transport_mode] ?? '—'}</div>
+          {t.partner_name && <div>Logistic partner: {t.partner_name}{t.partner_phone ? ` · ${t.partner_phone}` : ''}</div>}
           {t.transport_ref && <div>Vehicle / LR / docket: {t.transport_ref}</div>}
           <div>Dispatched: {fmtDateTime(t.dispatched_at) || '—'}</div>
           <div>Received: {fmtDateTime(t.received_at) || '—'}</div>
@@ -126,6 +131,9 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
           Received by{t.received_by_name ? `: ${t.received_by_name}` : ''}
         </div>
       </section>
+      {/* An image rather than a CSS background, which browsers leave out when printing. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="slip-watermark" src="/slip-watermark.png" alt="" aria-hidden="true" />
     </div>
   );
 }

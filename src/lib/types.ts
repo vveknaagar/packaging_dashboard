@@ -63,6 +63,8 @@ export interface TransferRow {
   note: string;
   transport_mode: string;
   transport_ref: string;
+  /** The courier or transport company it is sent with, chosen from the Super Admin's list. Optional. */
+  logistics_partner_id: number | null;
   created_by: number;
   created_at: string;
   dispatched_by: number | null;
@@ -96,6 +98,17 @@ export interface TransferDetail extends TransferRow {
   dispatched_by_name: string | null;
   received_by_name: string | null;
   closed_by_name: string | null;
+  partner_name: string | null;
+  partner_phone: string | null;
+}
+
+export interface LogisticsPartnerRow {
+  id: number;
+  name: string;
+  contact: string;
+  phone: string;
+  active: number;
+  created_at: string;
 }
 
 export interface TransferLine {

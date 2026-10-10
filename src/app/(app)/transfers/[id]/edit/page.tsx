@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { TransferForm } from '@/components/TransferForm';
 import { PageHead } from '@/components/ui';
 import { isSourceUser, isSuper } from '@/lib/permissions';
+import { listPartners } from '@/lib/services/logistics';
 import { getLines, getTransfer } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
 import { destinationsFor, transferableItems } from '@/lib/transfer-form-data';
@@ -25,12 +26,14 @@ export default async function EditTransferPage({ params }: { params: Promise<{ i
         sourceName={transfer.source_name}
         stockLabel={isSuper(user) ? 'In stock' : undefined}
         destinations={await destinationsFor(transfer.source_id)}
+        partners={await listPartners(true)}
         items={await transferableItems(transfer.source_id)}
         transferId={transfer.id}
         initialDestId={transfer.dest_id}
         initialNote={transfer.note}
         initialTransportMode={transfer.transport_mode}
         initialTransportRef={transfer.transport_ref}
+        initialPartnerId={transfer.logistics_partner_id}
         initialQty={Object.fromEntries(lines.map((l) => [l.item_id, l.qty_sent]))}
       />
     </>

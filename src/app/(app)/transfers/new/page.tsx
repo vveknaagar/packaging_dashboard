@@ -4,6 +4,7 @@ import { TransferForm } from '@/components/TransferForm';
 import { Forbidden, PageHead } from '@/components/ui';
 import { all } from '@/lib/db';
 import { canCreateTransfer, isSuper } from '@/lib/permissions';
+import { listPartners } from '@/lib/services/logistics';
 import { requireUser } from '@/lib/session';
 import { destinationsFor, transferableItems } from '@/lib/transfer-form-data';
 import { param, parseId } from '@/lib/util';
@@ -36,7 +37,7 @@ export default async function NewTransferPage({ searchParams }: { searchParams: 
         <TransferForm
           key={sourceId}
           sourceName={source.name} sources={sources} sourceId={sourceId} stockLabel={sources ? 'In stock' : undefined}
-          destinations={destinations} items={await transferableItems(sourceId)}
+          destinations={destinations} items={await transferableItems(sourceId)} partners={await listPartners(true)}
         />
       )}
     </>

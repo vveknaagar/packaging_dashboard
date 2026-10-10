@@ -5,6 +5,7 @@ import type { LocationRow, SessionUser, TransferDetail, TransferEvent, TransferL
 import { TRANSPORT_MODES } from '../transport';
 import { clean, parseQty } from '../util';
 import { processImage, saveProcessed, type ProcessedImage } from './images';
+import { partnerForTransfer } from './logistics';
 import * as stock from './stock';
 
 export const STATUS_LABELS: Record<TransferStatus, string> = {
@@ -69,7 +70,8 @@ export function getTransfer(id: number): Promise<TransferDetail | undefined> {
             (SELECT u.name FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_contact,
             (SELECT u.phone FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_phone,
             cu.name AS created_by_name, du.name AS dispatched_by_name,
-            ru.name AS received_by_name, xu.name AS closed_by_name
+            ru.name AS received_by_name, xu.name AS closed_by_name,
+            lp.name AS partner_name, lp.phone AS partner_phone
      FROM transfers t
      JOIN locations s ON s.id = t.source_id
      JOIN locations d ON d.id = t.dest_id
@@ -77,6 +79,7 @@ export function getTransfer(id: number): Promise<TransferDetail | undefined> {
      LEFT JOIN users du ON du.id = t.dispatched_by
      LEFT JOIN users ru ON ru.id = t.received_by
      LEFT JOIN users xu ON xu.id = t.closed_by
+     LEFT JOIN logistics_partners lp ON lp.id = t.logistics_partner_id
      WHERE t.id = ?`, id);
 }
 
@@ -267,22 +270,25 @@ interface SaveInput {
   transportMode: unknown;
   /** Vehicle, LR or docket number. Optional. */
   transportRef: unknown;
+  /** Id of the logistic partner from the Super Admin's list. Optional. */
+  partnerId?: unknown;
   dispatchNow: boolean;
   /** The uploaded photo of the packed parcel. Required when dispatching. */
   parcelPhoto?: Buffer | null;
 }
 
 /** Create a transfer from the user's own location (the Super Admin names one). Optionally dispatch it straight away. */
-export async function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, dispatchNow, parcelPhoto }: SaveInput): Promise<number> {
+export async function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, partnerId, dispatchNow, parcelPhoto }: SaveInput): Promise<number> {
   const photo = dispatchNow ? await parcelPhotoFor(parcelPhoto) : null;
   return tx(async () => {
     const { source, dest } = await checkRoute(user, isSuper(user) ? sourceId ?? null : user.location_id, destId);
     const lines = await normaliseLines(source.id, rawLines);
     const transport = cleanTransport(transportMode, transportRef);
+    const partner = await partnerForTransfer(partnerId);
     const id = await insert(
-      `INSERT INTO transfers (number, source_id, dest_id, status, note, transport_mode, transport_ref, created_by, created_at)
-       VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?)`,
-      await nextNumber(source), source.id, dest.id, clean(note, 500), transport.transportMode, transport.transportRef, user.id, now());
+      `INSERT INTO transfers (number, source_id, dest_id, status, note, transport_mode, transport_ref, logistics_partner_id, created_by, created_at)
+       VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
+      await nextNumber(source), source.id, dest.id, clean(note, 500), transport.transportMode, transport.transportRef, partner, user.id, now());
     for (const line of lines) {
       await run('INSERT INTO transfer_items (transfer_id, item_id, qty_sent) VALUES (?, ?, ?)', id, line.itemId, line.qty);
     }
@@ -293,7 +299,7 @@ export async function create({ user, sourceId, destId, rawLines, note, transport
 }
 
 /** Replace the destination, note and lines of a draft. */
-export async function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, dispatchNow, parcelPhoto }: SaveInput & { id: number }): Promise<number> {
+export async function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, partnerId, dispatchNow, parcelPhoto }: SaveInput & { id: number }): Promise<number> {
   const photo = dispatchNow ? await parcelPhotoFor(parcelPhoto) : null;
   return tx(async () => {
     const transfer = await loadForAction(id);
@@ -302,8 +308,9 @@ export async function updateDraft({ user, id, destId, rawLines, note, transportM
     const { dest } = await checkRoute(user, transfer.source_id, destId);
     const lines = await normaliseLines(transfer.source_id, rawLines);
     const transport = cleanTransport(transportMode, transportRef);
-    await run('UPDATE transfers SET dest_id = ?, note = ?, transport_mode = ?, transport_ref = ? WHERE id = ?',
-      dest.id, clean(note, 500), transport.transportMode, transport.transportRef, id);
+    const partner = await partnerForTransfer(partnerId);
+    await run('UPDATE transfers SET dest_id = ?, note = ?, transport_mode = ?, transport_ref = ?, logistics_partner_id = ? WHERE id = ?',
+      dest.id, clean(note, 500), transport.transportMode, transport.transportRef, partner, id);
     await run('DELETE FROM transfer_items WHERE transfer_id = ?', id);
     for (const line of lines) {
       await run('INSERT INTO transfer_items (transfer_id, item_id, qty_sent) VALUES (?, ?, ?)', id, line.itemId, line.qty);

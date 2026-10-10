@@ -15,14 +15,15 @@ const STOCK_ROLES = ['super_admin', 'warehouse_admin', 'store_admin'] as const;
 
 /** "TR-0012" and "Warehouse → Varachha Store · Kraft Box (Small) × 300, ..." for the audit log. */
 async function transferInfo(id: number, received = false) {
-  const t = await get<{ number: string; source: string; dest: string }>(
-    `SELECT t.number, s.name AS source, d.name AS dest FROM transfers t
-     JOIN locations s ON s.id = t.source_id JOIN locations d ON d.id = t.dest_id WHERE t.id = ?`, id);
+  const t = await get<{ number: string; source: string; dest: string; partner: string | null }>(
+    `SELECT t.number, s.name AS source, d.name AS dest, lp.name AS partner FROM transfers t
+     JOIN locations s ON s.id = t.source_id JOIN locations d ON d.id = t.dest_id
+     LEFT JOIN logistics_partners lp ON lp.id = t.logistics_partner_id WHERE t.id = ?`, id);
   const lines = await all<{ name: string; size: string; qty_sent: number; qty_received: number | null }>(
     `SELECT i.name, i.size, ti.qty_sent, ti.qty_received FROM transfer_items ti JOIN items i ON i.id = ti.item_id
      WHERE ti.transfer_id = ? ORDER BY i.name, i.size`, id);
   const list = lines.map((l) => `${l.name} (${l.size}) × ${fmtNum(l.qty_sent)}${received && l.qty_received !== l.qty_sent ? ` (received ${fmtNum(l.qty_received)})` : ''}`).join(', ');
-  return { number: t?.number ?? `Transfer #${id}`, route: t ? `${t.source} → ${t.dest}` : '', list };
+  return { number: t?.number ?? `Transfer #${id}`, route: t ? `${t.source} → ${t.dest}${t.partner ? ` via ${t.partner}` : ''}` : '', list };
 }
 
 /** Stock In, Stock Out or Adjustment at the user's own location (any location for the Super Admin). */
@@ -77,6 +78,7 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
       note: rawField(formData, 'note'),
       transportMode: rawField(formData, 'transport_mode'),
       transportRef: rawField(formData, 'transport_ref'),
+      partnerId: rawField(formData, 'logistics_partner_id'),
       dispatchNow,
       parcelPhoto: dispatchNow ? await parcelPhotoFrom(formData) : null,
     };

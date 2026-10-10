@@ -26,6 +26,8 @@ interface Props {
   /** Whose stock the numbers are: "Your stock" unless the Super Admin is sending from a location. */
   stockLabel?: string;
   destinations: { id: number; name: string; code: string }[];
+  /** Active logistic partners from the Super Admin's list. */
+  partners: { id: number; name: string }[];
   items: TransferFormItem[];
   /** Present when editing a draft. */
   transferId?: number;
@@ -33,13 +35,14 @@ interface Props {
   initialNote?: string;
   initialTransportMode?: string;
   initialTransportRef?: string;
+  initialPartnerId?: number | null;
   initialQty?: Record<number, number>;
 }
 
 /** Create a transfer or edit a draft: choose the destination, tick the items to send and type a quantity for each. */
 export function TransferForm({
-  sourceName, sources, sourceId, stockLabel = 'Your stock', destinations, items, transferId, initialDestId, initialNote = '',
-  initialTransportMode = '', initialTransportRef = '', initialQty = {},
+  sourceName, sources, sourceId, stockLabel = 'Your stock', destinations, partners, items, transferId, initialDestId, initialNote = '',
+  initialTransportMode = '', initialTransportRef = '', initialPartnerId = null, initialQty = {},
 }: Props) {
   const router = useRouter();
   const [qty, setQty] = useState<Record<number, string>>(
@@ -109,6 +112,14 @@ export function TransferForm({
               <option value="" disabled>Select…</option>
               {Object.entries(TRANSPORT_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
+          </label>
+          <label className="field">
+            <span>Logistic partner (optional)</span>
+            <select name="logistics_partner_id" defaultValue={initialPartnerId ?? ''}>
+              <option value="">None (own arrangement)</option>
+              {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            {partners.length === 0 && <span className="hint">The Super Admin has not added any logistic partners yet.</span>}
           </label>
           <label className="field">
             <span>Vehicle / LR / docket no. (optional)</span>

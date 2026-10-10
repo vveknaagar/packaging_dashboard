@@ -18,6 +18,7 @@ const NAV: Record<Role, NavItem[]> = {
     { href: '/transfers/new', label: 'New transfer', section: 'Transfers' },
     { href: '/locations', label: 'Locations', section: 'Setup' },
     { href: '/users', label: 'Users', section: 'Setup' },
+    { href: '/logistics', label: 'Logistic partners', section: 'Setup' },
     { href: '/audit', label: 'Audit log', section: 'Setup' },
     { href: '/guide', label: 'User guide', section: 'Help' },
   ],

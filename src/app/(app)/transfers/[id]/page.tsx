@@ -173,6 +173,9 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
               {t.transport_mode && (
                 <><dt>Transport</dt><dd>{TRANSPORT_MODES[t.transport_mode] ?? t.transport_mode}{t.transport_ref ? ` · ${t.transport_ref}` : ''}</dd></>
               )}
+              {t.partner_name && (
+                <><dt>Logistic partner</dt><dd>{t.partner_name}{t.partner_phone ? ` · ${t.partner_phone}` : ''}</dd></>
+              )}
               <dt>Created</dt><dd>{fmtDateTime(t.created_at)} by {t.created_by_name}</dd>
               {t.dispatched_at && <><dt>Dispatched</dt><dd>{fmtDateTime(t.dispatched_at)} by {t.dispatched_by_name}</dd></>}
               {t.parcel_image && (

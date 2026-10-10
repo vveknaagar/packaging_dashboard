@@ -4,6 +4,7 @@ import { runAction } from '@/lib/action';
 import { audit, changes, roleLabel } from '@/lib/audit';
 import { get, now, run } from '@/lib/db';
 import * as locations from '@/lib/services/locations';
+import * as logistics from '@/lib/services/logistics';
 import * as users from '@/lib/services/users';
 import type { ActionResult, LocationRow } from '@/lib/types';
 import { field, parseId, rawField, requireId } from '@/lib/util';
@@ -54,6 +55,40 @@ export async function setLocationStatusAction(formData: FormData): Promise<Actio
     const store = await locationRow(id);
     await audit(user, active ? 'location_activated' : 'location_deactivated', store ? `${store.name} (${store.code})` : `Location #${id}`);
     return { ok: active ? 'Store activated.' : 'Store deactivated.' };
+  });
+}
+
+/* ---------- logistic partners ---------- */
+
+const PARTNER_FIELDS = { name: 'Name', contact: 'Contact person', phone: 'Phone' };
+
+export async function savePartnerAction(formData: FormData): Promise<ActionResult> {
+  return runAction(['super_admin'], async (user) => {
+    const id = parseId(rawField(formData, 'id'));
+    const before = id ? await logistics.getPartner(id) : undefined;
+    const savedId = await logistics.savePartner(user, id, {
+      name: rawField(formData, 'name'),
+      contact: rawField(formData, 'contact'),
+      phone: rawField(formData, 'phone'),
+    });
+    const after = (await logistics.getPartner(savedId))!;
+    if (before) {
+      await audit(user, 'partner_updated', after.name, changes(before, after, PARTNER_FIELDS) || 'No changes');
+      return { ok: 'Logistic partner updated.', redirectTo: '/logistics' };
+    }
+    await audit(user, 'partner_created', after.name, [after.contact, after.phone].filter(Boolean).join(' · '));
+    return { ok: 'Logistic partner added.', redirectTo: '/logistics' };
+  });
+}
+
+export async function setPartnerStatusAction(formData: FormData): Promise<ActionResult> {
+  return runAction(['super_admin'], async (user) => {
+    const id = requireId(rawField(formData, 'id'), 'logistic partner');
+    const active = field(formData, 'active') === '1';
+    await logistics.setPartnerStatus(user, id, active);
+    const partner = await logistics.getPartner(id);
+    await audit(user, active ? 'partner_activated' : 'partner_deactivated', partner?.name ?? `Partner #${id}`);
+    return { ok: active ? 'Logistic partner activated.' : 'Logistic partner deactivated.' };
   });
 }
 

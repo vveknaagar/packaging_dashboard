@@ -664,3 +664,27 @@ describe('audit log', () => {
     await assert.rejects(refusedSql('DELETE FROM audit_log WHERE id = ?', out.id));
   });
 });
+
+describe('logistic partners', () => {
+  test('only the Super Admin keeps the list; senders pick an active partner on a transfer', async () => {
+    const logistics = await import('../src/lib/services/logistics');
+    await assert.rejects(logistics.savePartner(whAdmin, null, { name: 'Blue Dart', contact: '', phone: '' }), isAppError(/Only the Super Admin/));
+    const blueDart = await logistics.savePartner(superAdmin, null, { name: 'Blue Dart', contact: 'Ravi', phone: '98250 00000' });
+    await assert.rejects(logistics.savePartner(superAdmin, null, { name: 'blue dart', contact: '', phone: '' }), isAppError(/already exists/));
+    await assert.rejects(logistics.setPartnerStatus(storeA, blueDart, false), isAppError(/Only the Super Admin/));
+
+    const send = (partnerId: unknown) => transfers.create({
+      user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '',
+      transportMode: 'courier', transportRef: 'BD123', partnerId, dispatchNow: false,
+    });
+    const id = await send(String(blueDart));
+    assert.equal((await transfers.getTransfer(id))!.partner_name, 'Blue Dart');
+    assert.equal((await transfers.getTransfer(await send('')))!.logistics_partner_id, null, 'a partner is optional');
+    await assert.rejects(send('999999'), isAppError(/from the list/));
+
+    // A deactivated partner cannot be chosen any more, but transfers that used it keep it.
+    await logistics.setPartnerStatus(superAdmin, blueDart, false);
+    await assert.rejects(send(String(blueDart)), isAppError(/from the list/));
+    assert.equal((await transfers.getTransfer(id))!.partner_name, 'Blue Dart');
+  });
+});
