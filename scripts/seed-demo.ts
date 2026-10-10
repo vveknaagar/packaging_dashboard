@@ -3,7 +3,8 @@
  * three stores, one user per role, a few items with placeholder pictures,
  * opening stock and transfers in different states.
  *
- *   npm run seed:demo
+ *   npm run seed:demo    the database in .env (DATABASE_URL)
+ *   npm run seed:local   the local database used by start:local / dev:local
  *
  * It refuses to run once there is real data (stores, items or transfers), or
  * if a demo username is already taken. An existing Super Admin account is
@@ -42,6 +43,19 @@ async function placeholder(label: string, colour: string): Promise<Buffer> {
     <text x="300" y="540" font-family="Arial, sans-serif" font-size="34" text-anchor="middle" fill="#3a3a36">${safe}</text>
   </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** A stand-in photo of a packed parcel, which every dispatch needs. */
+function parcelPhoto(label: string): Promise<Buffer> {
+  const safe = label.replace(/[<>&]/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+    <rect width="800" height="600" fill="#e8e4da"/>
+    <rect x="200" y="140" width="400" height="300" rx="10" fill="#b98f55" stroke="#5a4325" stroke-width="6"/>
+    <rect x="370" y="140" width="60" height="300" fill="#d9a441" opacity="0.9"/>
+    <rect x="240" y="320" width="150" height="80" fill="#ffffff" stroke="#5a4325" stroke-width="3"/>
+    <text x="400" y="520" font-family="Arial, sans-serif" font-size="36" text-anchor="middle" fill="#3a3a36">Parcel ${safe}</text>
+  </svg>`;
+  return sharp(Buffer.from(svg)).jpeg().toBuffer();
 }
 
 async function user(id: number): Promise<SessionUser> {
@@ -86,17 +100,17 @@ async function main() {
   const line = (index: number, qty: number) => ({ itemId: itemIds[index], qty: String(qty) });
 
   // Received in full.
-  const t1 = await transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(0, 300), line(3, 500), line(4, 400), line(6, 30)], note: 'Weekly replenishment', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  const t1 = await transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(0, 300), line(3, 500), line(4, 400), line(6, 30)], note: 'Weekly replenishment', transportMode: 'road_own', transportRef: '', dispatchNow: true, parcelPhoto: await parcelPhoto('1') });
   await transfers.receive({ user: store1, id: t1, received: Object.fromEntries((await transfers.getLines(t1)).map((l) => [l.id, String(l.qty_sent)])), remark: '' });
   // Received with a discrepancy.
-  const t2 = await transfers.create({ user: warehouse, destId: storeIds[1], rawLines: [line(0, 200), line(1, 150), line(5, 6)], note: '', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  const t2 = await transfers.create({ user: warehouse, destId: storeIds[1], rawLines: [line(0, 200), line(1, 150), line(5, 6)], note: '', transportMode: 'road_own', transportRef: '', dispatchNow: true, parcelPhoto: await parcelPhoto('2') });
   await transfers.receive({
     user: store2, id: t2, remark: '10 small boxes arrived crushed',
     received: Object.fromEntries((await transfers.getLines(t2)).map((l) => [l.id, String(l.item_id === itemIds[0] ? l.qty_sent - 10 : l.qty_sent)])),
   });
   // In transit: waiting to be received.
-  await transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(1, 120), line(7, 150)], note: 'Festival stock', transportMode: 'road_own', transportRef: '', dispatchNow: true });
-  await transfers.create({ user: store1, destId: storeIds[1], rawLines: [line(3, 100)], note: 'Adajan ran short of pouches', transportMode: 'road_own', transportRef: '', dispatchNow: true });
+  await transfers.create({ user: warehouse, destId: storeIds[0], rawLines: [line(1, 120), line(7, 150)], note: 'Festival stock', transportMode: 'road_own', transportRef: '', dispatchNow: true, parcelPhoto: await parcelPhoto('3') });
+  await transfers.create({ user: store1, destId: storeIds[1], rawLines: [line(3, 100)], note: 'Adajan ran short of pouches', transportMode: 'road_own', transportRef: '', dispatchNow: true, parcelPhoto: await parcelPhoto('4') });
   // A draft.
   await transfers.create({ user: warehouse, destId: storeIds[2], rawLines: [line(4, 300), line(6, 24)], note: 'First stock for Vesu', transportMode: 'road_own', transportRef: '', dispatchNow: false });
   // Everyday use at a store.

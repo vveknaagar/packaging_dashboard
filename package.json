@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "seed:demo": "tsx --env-file=.env scripts/seed-demo.ts",
+    "seed:local": "node scripts/dev-local.mjs seed",
     "db:password": "node scripts/set-database-password.mjs",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
