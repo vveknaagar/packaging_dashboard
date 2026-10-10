@@ -31,9 +31,8 @@ async function saveUpload(file: File, extension: string): Promise<string> {
 }
 
 /**
- * Bulk upload, step 1: receive the sheet and optional ZIP, validate every row
- * and answer with a preview token. Large ZIPs do not fit through a server
- * action, so this is a plain upload endpoint with its own checks.
+ * Bulk upload, step 1: receive the sheet, validate every row and answer with
+ * a preview token. This is a plain upload endpoint with its own checks.
  */
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return json({ error: 'Request blocked: it did not come from this application.' }, 403);
@@ -42,7 +41,7 @@ export async function POST(request: Request) {
   if (!isSuper(user)) return json({ error: 'Only the Super Admin can upload items.' }, 403);
 
   const declared = Number(request.headers.get('content-length') || 0);
-  if (declared > config.MAX_ZIP_BYTES + config.MAX_SHEET_BYTES) {
+  if (declared > config.MAX_SHEET_BYTES + 64 * 1024) {
     return json({ error: 'The upload is too large. Split the import into smaller batches.' }, 413);
   }
 
@@ -55,7 +54,6 @@ export async function POST(request: Request) {
       throw new AppError('The upload could not be read. Please try again.');
     }
     const sheet = form.get('sheet');
-    const zip = form.get('zip');
     if (!(sheet instanceof File) || sheet.size === 0) throw new AppError('Choose the item sheet (.xlsx or .csv).');
     if (sheet.size > config.MAX_SHEET_BYTES) throw new AppError('The sheet is larger than 5 MB.');
     const sheetExt = path.extname(sheet.name).toLowerCase();
@@ -63,15 +61,8 @@ export async function POST(request: Request) {
 
     const sheetPath = await saveUpload(sheet, sheetExt);
     temp.push(sheetPath);
-    let zipPath: string | null = null;
-    if (zip instanceof File && zip.size > 0) {
-      if (zip.size > config.MAX_ZIP_BYTES) throw new AppError('The ZIP is larger than 200 MB.');
-      if (path.extname(zip.name).toLowerCase() !== '.zip') throw new AppError('Images must be uploaded as a .zip file.');
-      zipPath = await saveUpload(zip, '.zip');
-      temp.push(zipPath);
-    }
 
-    const token = await buildPreview({ user, sheetPath, sheetName: sheet.name, zipPath });
+    const token = await buildPreview({ user, sheetPath, sheetName: sheet.name });
     return json({ token });
   } catch (err) {
     if (err instanceof AppError) return json({ error: err.message }, err.status);

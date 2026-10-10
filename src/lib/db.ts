@@ -176,21 +176,15 @@ CREATE TABLE IF NOT EXISTS images (
   created_at text NOT NULL
 );
 
--- Bulk uploads waiting on the preview screen: the checked rows, and each processed picture.
+-- Bulk uploads waiting on the preview screen: the checked rows.
 CREATE TABLE IF NOT EXISTS bulk_previews (
   token      text PRIMARY KEY,
   user_id    integer NOT NULL REFERENCES users(id),
   manifest   text NOT NULL,
   created_at bigint NOT NULL
 );
-CREATE TABLE IF NOT EXISTS bulk_preview_images (
-  token      text NOT NULL,
-  idx        integer NOT NULL,
-  main       bytea NOT NULL,
-  thumb      bytea NOT NULL,
-  created_at bigint NOT NULL,
-  PRIMARY KEY (token, idx)
-);
+-- Pictures are no longer part of bulk upload.
+DROP TABLE IF EXISTS bulk_preview_images;
 
 -- Supabase also exposes the public schema through its REST API using the anon key,
 -- which is public. Row level security with no policies shuts that door: only this
@@ -207,7 +201,6 @@ ALTER TABLE stock_ledger    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE images          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bulk_previews   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE bulk_preview_images ENABLE ROW LEVEL SECURITY;
 
 -- Settings the app keeps for itself, such as which version of this schema was applied.
 CREATE TABLE IF NOT EXISTS app_meta (

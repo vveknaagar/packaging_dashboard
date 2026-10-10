@@ -11,7 +11,7 @@ export function ItemForm({ item, units }: { item?: ItemRow; units: string[] }) {
       {item && <input type="hidden" name="id" value={item.id} />}
       <div className="field">
         <span>Image{item ? ' (choose a file only to replace it)' : ' (required)'}</span>
-        <ImageInput name="image" required={!item} currentSrc={item ? `/uploads/${item.image}` : undefined} />
+        <ImageInput name="image" required={!item} currentSrc={item?.image ? `/uploads/${item.image}` : undefined} />
       </div>
       <div className="form-grid">
         <label className="field">

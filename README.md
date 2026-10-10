@@ -70,14 +70,15 @@ did it. Nobody else can switch.
 in: they are taken from its Store Admin (the name and phone number on that user). The warehouse
 works the same way with the Warehouse Admin.
 
-**Items.** Image, Name and Size are required. Name + Size is unique (ignoring capitals and extra
-spaces). Images up to 2 MB are re-encoded and a thumbnail is generated. Items are deactivated,
-never deleted.
+**Items.** Image, Name and Size are required when adding an item on its own (bulk-imported items
+start without a picture until one is added with Edit item). Name + Size is unique (ignoring capitals
+and extra spaces). Images up to 2 MB are re-encoded and a thumbnail is generated. Items are
+deactivated, never deleted.
 
-**Bulk upload.** Download the Excel or CSV template, fill it, and upload it with an optional ZIP of
-images matched by file name (an image column value can also be an `https://` address). A preview
-lists every row with its errors: missing fields, duplicates, missing or oversized images. Only the
-valid rows are imported, and only when you confirm. The sheet has five columns: Name, Size, Image, Unit and Stock.
+**Bulk upload.** Download the Excel or CSV template, fill it, and upload it. A preview lists every
+row with its errors: missing fields and duplicates. Only the valid rows are imported, and only when
+you confirm. The sheet has four columns: Name, Size, Unit and Stock. Pictures are not part of the
+sheet; add them afterwards with Edit item.
 Stock is the quantity on hand: on import it is added to the warehouse as opening stock, with a
 ledger entry.
 
@@ -118,8 +119,7 @@ Row level security is switched on for every table with no policies, so Supabase'
 
 `vercel.json` runs the app in Sydney (`syd1`), next to the Supabase database; if your database is
 in another region, change it to the closest Vercel region. On Vercel one upload can be at most
-4.5 MB, so a bulk upload's ZIP of pictures must stay under that (split bigger imports, or use
-image URLs in the sheet).
+4.5 MB.
 
 ## Settings (environment variables)
 

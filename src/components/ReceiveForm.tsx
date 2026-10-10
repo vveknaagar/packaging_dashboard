@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { receiveTransferAction } from '@/app/actions/stock';
 import { ActionForm, SubmitButton } from './ActionForm';
+import { Thumb } from './Thumb';
 
 interface Line {
   id: number;
@@ -36,8 +37,7 @@ export function ReceiveForm({ transferId, lines }: { transferId: number; lines: 
       <ul className="pick-list">
         {parsed.map(({ line, text, n, differs }) => (
           <li key={line.id} className={differs ? 'differs' : undefined}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="thumb" src={`/uploads/${line.thumb}`} alt="" width={48} height={48} loading="lazy" />
+            <Thumb src={line.thumb} size={48} />
             <div className="pick-info">
               <div className="item-name">{line.name}</div>
               <div className="item-size">{line.size}</div>

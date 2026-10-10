@@ -14,45 +14,6 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import pg from 'pg';
-import zlib from 'node:zlib';
-
-/** Build a small uncompressed ZIP in memory, so the import can be tested with image files. */
-function storedZip(files: Record<string, Buffer>): Buffer {
-  const parts: Buffer[] = [];
-  const central: Buffer[] = [];
-  let offset = 0;
-  for (const [name, data] of Object.entries(files)) {
-    const nameBytes = Buffer.from(name, 'utf8');
-    const crc = zlib.crc32(data);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(nameBytes.length, 26);
-    const header = Buffer.alloc(46);
-    header.writeUInt32LE(0x02014b50, 0);
-    header.writeUInt16LE(20, 4);
-    header.writeUInt16LE(20, 6);
-    header.writeUInt32LE(crc, 16);
-    header.writeUInt32LE(data.length, 20);
-    header.writeUInt32LE(data.length, 24);
-    header.writeUInt16LE(nameBytes.length, 28);
-    header.writeUInt32LE(offset, 42);
-    parts.push(local, nameBytes, data);
-    central.push(header, nameBytes);
-    offset += local.length + nameBytes.length + data.length;
-  }
-  const directory = Buffer.concat(central);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(Object.keys(files).length, 8);
-  end.writeUInt16LE(Object.keys(files).length, 10);
-  end.writeUInt32LE(directory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...parts, directory, end]);
-}
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'packaging-test-'));
 process.env.DATA_DIR = dataDir;
@@ -588,14 +549,14 @@ describe('users', () => {
 });
 
 describe('bulk upload', () => {
-  test('the template has Name, Size, Image, Unit and Stock columns only', async () => {
-    assert.deepEqual(bulk.TEMPLATE_HEADERS, ['Name', 'Size', 'Image (filename or URL)', 'Unit', 'Stock']);
-    assert.equal(bulk.templateCsv().trim(), 'Name,Size,Image (filename or URL),Unit,Stock');
+  test('the template has Name, Size, Unit and Stock columns only, with no image column', async () => {
+    assert.deepEqual(bulk.TEMPLATE_HEADERS, ['Name', 'Size', 'Unit', 'Stock']);
+    assert.equal(bulk.templateCsv().trim(), 'Name,Size,Unit,Stock');
     const ExcelJS = (await import('exceljs')).default;
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await bulk.templateXlsx()) as unknown as ArrayBuffer);
     const header = (wb.getWorksheet('Items')!.getRow(1).values as unknown[]).filter(Boolean);
-    assert.deepEqual(header, ['Name', 'Size', 'Image (filename or URL)', 'Unit', 'Stock']);
+    assert.deepEqual(header, ['Name', 'Size', 'Unit', 'Stock']);
   });
 
   test('CSV parsing handles quotes, commas and blank lines', async () => {
@@ -607,58 +568,58 @@ describe('bulk upload', () => {
   test('preview reports row-level errors and imports nothing by itself', async () => {
     const sheet = path.join(dataDir, 'sheet.csv');
     fs.writeFileSync(sheet, [
-      'Name,Size,Image (filename or URL),Unit,Stock',
-      'Mailer Bag,Medium,mailer.jpg,pcs,100',
-      ',Large,x.jpg,,',
-      'Mailer Bag,MEDIUM,mailer.jpg,,',
-      'Kraft Box,Small,box.jpg,,',
-      'Label Roll,100mm,,,abc',
-      'Local Thing,One,http://127.0.0.1/a.png,,',
+      'Name,Size,Unit,Stock',
+      'Mailer Bag,Medium,pcs,100',
+      ',Large,,',
+      'Mailer Bag,MEDIUM,,',
+      'Kraft Box,Small,,',
+      'Label Roll,100mm,,abc',
     ].join('\n'));
     const before = (await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM items'))!.n;
-    await assert.rejects(bulk.buildPreview({ user: whAdmin, sheetPath: sheet, sheetName: 'sheet.csv', zipPath: null }), isAppError(/permission/));
-    const token = await bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'sheet.csv', zipPath: null });
+    await assert.rejects(bulk.buildPreview({ user: whAdmin, sheetPath: sheet, sheetName: 'sheet.csv' }), isAppError(/permission/));
+    const token = await bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'sheet.csv' });
     const { rows } = await bulk.loadPreview(token, superAdmin);
-    assert.equal(rows.length, 6);
-    assert.match(rows[0].errors.join(' '), /needs a ZIP/);
+    assert.equal(rows.length, 5);
+    assert.deepEqual(rows[0].errors, []);
     assert.match(rows[1].errors.join(' '), /Name is missing/);
     assert.match(rows[2].errors.join(' '), /Duplicate of row 2/);
     assert.match(rows[3].errors.join(' '), /already exists/);
-    assert.match(rows[4].errors.join(' '), /Image is missing/);
     assert.match(rows[4].errors.join(' '), /Stock must be a whole number/);
-    assert.match(rows[5].errors.join(' '), /private network address/);
     assert.equal((await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM items'))!.n, before);
-    await assert.rejects(async () => await bulk.importPreview(token, superAdmin), isAppError(/no valid rows/));
     await bulk.discard(token, superAdmin);
     await assert.rejects(bulk.loadPreview(token, superAdmin), isAppError(/expired/));
   });
 
-  test('importing adds the Stock column to the warehouse as opening stock', async () => {
-    const zipPath = path.join(dataDir, 'images.zip');
-    fs.writeFileSync(zipPath, storedZip({ 'pouch.png': pngBuffer, 'Card.PNG': pngBuffer }));
+  test('a sheet without Name or Size headings is refused; an old Image column is ignored', async () => {
+    const sheet = path.join(dataDir, 'headings.csv');
+    fs.writeFileSync(sheet, 'Name,Unit\nTape,roll');
+    await assert.rejects(bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'headings.csv' }), isAppError(/Missing: size/));
+    fs.writeFileSync(sheet, 'Name,Size,Image (filename or URL),Unit,Stock\nOld Format Box,Tiny,box.jpg,pcs,5');
+    const token = await bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'headings.csv' });
+    const { rows } = await bulk.loadPreview(token, superAdmin);
+    assert.deepEqual(rows.map((r) => [r.name, r.size, r.unit, r.stock, r.errors]), [['Old Format Box', 'Tiny', 'pcs', 5, []]]);
+    await bulk.discard(token, superAdmin);
+  });
+
+  test('importing adds items without pictures and the Stock column as opening stock', async () => {
     const sheet = path.join(dataDir, 'import.csv');
     fs.writeFileSync(sheet, [
-      'Name,Size,Image (filename or URL),Unit,Stock',
-      'Velvet Pouch,3 x 4 in,pouch.png,pcs,250',
-      'Thank You Card,A6,card.png,pcs,',
-      'Gift Bag,Large,pouch,pcs,12.5',
+      'Name,Size,Unit,Stock',
+      'Velvet Pouch,3 x 4 in,pcs,250',
+      'Thank You Card,A6,pcs,',
+      'Gift Bag,Large,pcs,12.5',
     ].join('\n'));
-    const token = await bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'import.csv', zipPath });
+    const token = await bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'import.csv' });
     const { rows } = await bulk.loadPreview(token, superAdmin);
     assert.deepEqual(rows.map((r) => [r.name, r.stock, r.errors.length]), [['Velvet Pouch', 250, 0], ['Thank You Card', 0, 0], ['Gift Bag', 0, 1]]);
     assert.match(rows[2].errors[0], /Stock must be a whole number/);
 
-    // A staged picture can be viewed by the uploader only.
-    assert.ok((await bulk.stagedThumb(token, superAdmin, '0')).length > 0);
-    await assert.rejects(bulk.stagedThumb(token, whAdmin, '0'));
-
     const result = await bulk.importPreview(token, superAdmin);
     assert.deepEqual(result, { imported: 2, skipped: 0, units: 250, rejected: 1 });
-    // The preview is used up, and each imported item has its own stored picture.
     await assert.rejects(bulk.loadPreview(token, superAdmin), isAppError(/expired/));
-    assert.equal((await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM bulk_preview_images WHERE token = ?', token))!.n, 0);
-    const pouch = (await db.get<{ id: number }>("SELECT id FROM items WHERE name = 'Velvet Pouch'"))!;
+    const pouch = (await db.get<{ id: number; image: string; thumb: string }>("SELECT id, image, thumb FROM items WHERE name = 'Velvet Pouch'"))!;
     const card = (await db.get<{ id: number }>("SELECT id FROM items WHERE name = 'Thank You Card'"))!;
+    assert.deepEqual([pouch.image, pouch.thumb], ['', ''], 'imported items start without a picture');
     assert.equal(await stock.getQty(pouch.id, await db.warehouseId()), 250);
     assert.equal(await stock.getQty(card.id, await db.warehouseId()), 0);
     // The opening stock is in the ledger like any other change.
@@ -666,20 +627,10 @@ describe('bulk upload', () => {
       'SELECT type, qty_before, qty_after, reason, user_id FROM stock_ledger WHERE item_id = ?', pouch.id))!;
     assert.deepEqual(entry, { type: 'stock_in', qty_before: 0, qty_after: 250, reason: 'Opening stock from bulk import', user_id: superAdmin.id });
     assert.equal(await db.get('SELECT 1 FROM stock_ledger WHERE item_id = ?', card.id), undefined, 'no entry when there is no opening stock');
-    const pictures = (await db.get<{ image: string }>('SELECT image FROM items WHERE id = ?', pouch.id))!;
-    assert.ok(await images.readStored(pictures.image));
-  });
 
-  test('image URLs pointing at private addresses are refused', async () => {
-    for (const ip of ['127.0.0.1', '10.1.2.3', '192.168.1.10', '172.20.0.1', '169.254.169.254', '::1', 'fd00::1', '::ffff:10.0.0.1']) {
-      assert.equal(bulk.isPrivateAddress(ip), true, ip);
-    }
-    for (const ip of ['8.8.8.8', '93.184.216.34', '2606:4700::1111']) assert.equal(bulk.isPrivateAddress(ip), false, ip);
-    const sheet = path.join(dataDir, 'urls.csv');
-    fs.writeFileSync(sheet, 'Name,Size,Image\nInternal,One,http://127.0.0.1:3000/secret.png\nMeta,One,http://169.254.169.254/latest');
-    const token = await bulk.buildPreview({ user: superAdmin, sheetPath: sheet, sheetName: 'urls.csv', zipPath: null });
-    const { rows } = await bulk.loadPreview(token, superAdmin);
-    assert.match(rows[0].errors.join(' '), /private network address/);
-    assert.match(rows[1].errors.join(' '), /private network address/);
+    // A picture can be added later with Edit item.
+    await items.updateItem(superAdmin, pouch.id, { name: 'Velvet Pouch', size: '3 x 4 in', unit: 'pcs' }, pngBuffer);
+    const updated = (await db.get<{ image: string }>('SELECT image FROM items WHERE id = ?', pouch.id))!;
+    assert.ok(await images.readStored(updated.image));
   });
 });

@@ -33,7 +33,6 @@ export const config = {
   COOKIE_SECURE: process.env.COOKIE_SECURE === '1',
   MAX_IMAGE_BYTES: 2 * 1024 * 1024,
   MAX_SHEET_BYTES: 5 * 1024 * 1024,
-  MAX_ZIP_BYTES: 200 * 1024 * 1024,
   MAX_BULK_ROWS: 2000,
 };
 

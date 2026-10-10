@@ -2,6 +2,9 @@ import Link from 'next/link';
 import { STATUS_LABELS } from '@/lib/services/transfers';
 import type { TransferStatus } from '@/lib/types';
 import { fmtNum, queryString, type Pager as PagerInfo } from '@/lib/util';
+import { Thumb } from './Thumb';
+
+export { Thumb };
 
 /** Shared, non-interactive building blocks used by the pages. */
 
@@ -23,14 +26,6 @@ export function StatusBadge({ status }: { status: TransferStatus }) {
 
 export function ActiveBadge({ active }: { active: number | boolean }) {
   return active ? <span className="badge badge-ok">Active</span> : <span className="badge badge-off">Inactive</span>;
-}
-
-export function Thumb({ src, alt = '', size = 44, href }: { src: string; alt?: string; size?: number; href?: string }) {
-  const img = (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img className="thumb" src={`/uploads/${src}`} alt={alt} width={size} height={size} loading="lazy" />
-  );
-  return href ? <a href={`/uploads/${href}`} target="_blank" rel="noreferrer" title="Open full image">{img}</a> : img;
 }
 
 export function ItemCell({ name, size, thumb, image }: { name: string; size: string; thumb: string; image?: string }) {

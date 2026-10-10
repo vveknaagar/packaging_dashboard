@@ -24,11 +24,10 @@ export default async function BulkUploadPage() {
             <a className="btn btn-ghost" href="/api/items/bulk/template?format=csv" download>CSV template</a>
           </p>
           <ul className="notes">
-            <li><strong>Name</strong>, <strong>Size</strong> and <strong>Image</strong> are required on every row.</li>
+            <li><strong>Name</strong> and <strong>Size</strong> are required on every row.</li>
             <li>Unit and Stock are optional. <strong>Stock</strong> is the quantity you have now: it is added to the warehouse and shows as In stock.</li>
-            <li>Image is either a file name (for example <code>kraft-box-small.jpg</code>) or a web address starting with <code>https://</code>.</li>
-            <li>For file names, put the pictures in one ZIP and upload it with the sheet.</li>
-            <li>Images: JPG, PNG, WebP or GIF, up to 2 MB each. Up to 2,000 rows per sheet.</li>
+            <li>Pictures are not part of the sheet. Add each item&apos;s picture afterwards with <strong>Edit item</strong>.</li>
+            <li>Up to 2,000 rows per sheet.</li>
             <li>Name + Size must be unique.</li>
           </ul>
         </section>

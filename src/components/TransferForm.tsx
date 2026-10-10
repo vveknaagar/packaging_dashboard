@@ -7,6 +7,7 @@ import { saveTransferAction } from '@/app/actions/stock';
 import { TRANSPORT_MODES } from '@/lib/transport';
 import { ActionForm, SubmitButton } from './ActionForm';
 import { ParcelPhotoInput } from './ParcelPhotoInput';
+import { Thumb } from './Thumb';
 
 export interface TransferFormItem {
   id: number;
@@ -145,8 +146,7 @@ export function TransferForm({
                     type="checkbox" className="pick-check" checked={on} disabled={!on && item.available === 0}
                     onChange={(e) => toggle(item.id, e.target.checked)}
                   />
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className="thumb" src={`/uploads/${item.thumb}`} alt="" width={48} height={48} loading="lazy" />
+                  <Thumb src={item.thumb} size={48} />
                   <span className="pick-info">
                     <span className="item-name">{item.name}</span>
                     <span className="item-size">{item.size}</span>

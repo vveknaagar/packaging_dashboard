@@ -106,8 +106,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {rows.map((r) => (
               <li key={r.id} className={r.active ? 'item-tab' : 'item-tab inactive'}>
                 <Link href={`/stock/items/${r.id}`} className="item-tab-link">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className="item-tab-img" src={`/uploads/${r.image}`} alt="" width={240} height={240} loading="lazy" />
+                  {r.image
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img className="item-tab-img" src={`/uploads/${r.image}`} alt="" width={240} height={240} loading="lazy" />
+                    : <span className="item-tab-img thumb-missing" title="No picture yet" aria-hidden="true" />}
                   <span className="item-name">{r.name}</span>
                   <span className="item-size">{r.size}</span>
                 </Link>

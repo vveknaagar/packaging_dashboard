@@ -73,17 +73,8 @@ export default async function BulkPreviewPage({ params }: { params: Promise<{ to
                 <tr key={row.rowNo} className={row.errors.length ? 'row-error' : undefined}>
                   <td data-label="Row">{row.rowNo}</td>
                   <td className="cell-main">
-                    <div className="item-cell">
-                      {row.staged !== null
-                        // eslint-disable-next-line @next/next/no-img-element
-                        ? <img className="thumb" src={`/api/items/bulk/${token}/thumb/${row.staged}`} alt="" width={44} height={44} loading="lazy" />
-                        : <span className="thumb thumb-missing" aria-hidden="true">?</span>}
-                      <div>
-                        <div className="item-name">{row.name || <span className="muted">(no name)</span>}</div>
-                        <div className="item-size">{row.size || '(no size)'}</div>
-                        <div className="muted clip">{row.imageRef}</div>
-                      </div>
-                    </div>
+                    <div className="item-name">{row.name || <span className="muted">(no name)</span>}</div>
+                    <div className="item-size">{row.size || '(no size)'}</div>
                   </td>
                   <td data-label="Unit">{row.unit || <span className="muted">—</span>}</td>
                   <td data-label="Stock" className="num">{row.stock ? fmtNum(row.stock) : <span className="muted">—</span>}</td>
