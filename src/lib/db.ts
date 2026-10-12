@@ -148,13 +148,17 @@ CREATE TABLE IF NOT EXISTS stock_ledger (
   item_id     integer NOT NULL REFERENCES items(id),
   location_id integer NOT NULL REFERENCES locations(id),
   user_id     integer NOT NULL REFERENCES users(id),
-  type        text NOT NULL CHECK (type IN ('stock_in','stock_out','adjustment','transfer_out','transfer_in','transfer_return')),
+  type        text NOT NULL CHECK (type IN ('stock_in','stock_out','sale','adjustment','transfer_out','transfer_in','transfer_return')),
   qty_change  integer NOT NULL,
   qty_before  integer NOT NULL,
   qty_after   integer NOT NULL CHECK (qty_after >= 0),
   reason      text NOT NULL,
   transfer_id integer REFERENCES transfers(id)
 );
+-- Databases created before stores could mark items sold have the older list of types.
+ALTER TABLE stock_ledger DROP CONSTRAINT IF EXISTS stock_ledger_type_check;
+ALTER TABLE stock_ledger ADD CONSTRAINT stock_ledger_type_check
+  CHECK (type IN ('stock_in','stock_out','sale','adjustment','transfer_out','transfer_in','transfer_return'));
 CREATE INDEX IF NOT EXISTS ledger_location ON stock_ledger(location_id, id);
 CREATE INDEX IF NOT EXISTS ledger_item ON stock_ledger(item_id, id);
 

@@ -47,6 +47,26 @@ export async function adjustStockAction(formData: FormData): Promise<ActionResul
   });
 }
 
+/** A store marks items sold: lines arrive as qty_<itemId> = quantity sold. */
+export async function recordSaleAction(formData: FormData): Promise<ActionResult> {
+  return runAction([...STOCK_ROLES], async (user) => {
+    const locationId = requireId(rawField(formData, 'location_id'), 'store');
+    const sold = await stock.recordSale({
+      user,
+      locationId,
+      lines: linesFrom(formData),
+      billNo: rawField(formData, 'bill_no'),
+      note: rawField(formData, 'note'),
+    });
+    const location = await get<{ name: string }>('SELECT name FROM locations WHERE id = ?', locationId);
+    const list = (await Promise.all(sold.map(async (s) => `${await itemLabel(s.itemId)} × ${fmtNum(s.qty)}`))).join(', ');
+    const note = field(formData, 'note');
+    await audit(user, 'items_sold', `${location?.name ?? ''} · Bill ${field(formData, 'bill_no')}`, `${list}${note ? `. Note: ${note}` : ''}`);
+    const units = sold.reduce((sum, s) => sum + s.qty, 0);
+    return { ok: `Marked ${fmtNum(units)} unit(s) of ${sold.length} item(s) as sold.`, redirectTo: `/stock?location=${locationId}` };
+  });
+}
+
 /** Lines arrive as one field per item: qty_<itemId> = quantity. */
 function linesFrom(formData: FormData): transfers.RawLine[] {
   const lines: transfers.RawLine[] = [];

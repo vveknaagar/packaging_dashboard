@@ -7,6 +7,7 @@ import { clean, parseQty } from '../util';
 export const LEDGER_LABELS: Record<LedgerType, string> = {
   stock_in: 'Stock In',
   stock_out: 'Stock Out',
+  sale: 'Sold',
   adjustment: 'Adjustment',
   transfer_out: 'Transfer Out',
   transfer_in: 'Transfer In',
@@ -97,6 +98,52 @@ export async function adjust({ user, itemId, locationId, mode, qty, reason }: Ad
       if (delta === 0) throw new AppError(`Stock is already ${before}. Nothing to adjust.`);
     }
     return changeStock({ itemId, locationId, delta, type, reason: `${why} ${onBehalfNote(user)}`.trim(), userId: user.id });
+  });
+}
+
+export interface SaleLine {
+  itemId: number;
+  qty: unknown;
+}
+
+interface SaleInput {
+  user: SessionUser;
+  locationId: number;
+  lines: SaleLine[];
+  /** The number on the store's sale invoice. Required. */
+  billNo: unknown;
+  note: unknown;
+}
+
+/**
+ * A store marks items as sold: each line takes its quantity off the store's stock,
+ * all together or not at all. Returns the item ids and quantities taken off.
+ */
+export async function recordSale({ user, locationId, lines, billNo, note }: SaleInput) {
+  if (!canEditStock(user, locationId)) throw new ForbiddenError('You can only mark items sold at your own store.');
+  const bill = clean(billNo, 60);
+  if (!bill) throw new AppError('Enter the bill / invoice number of the sale.');
+  const sold: { itemId: number; qty: number }[] = [];
+  for (const line of lines) {
+    const qty = parseQty(line.qty);
+    if (qty === null || qty === 0) throw new AppError('Each quantity sold must be a whole number greater than zero.');
+    if (sold.some((s) => s.itemId === line.itemId)) throw new AppError('An item is listed twice.');
+    sold.push({ itemId: line.itemId, qty });
+  }
+  if (sold.length === 0) throw new AppError('Choose at least one item and the quantity sold.');
+  const extra = clean(note, 300);
+  const reason = `Sold, bill no. ${bill}${extra ? `. ${extra}` : ''} ${onBehalfNote(user)}`.trim();
+
+  return tx(async () => {
+    const location = await get<{ type: string; active: number }>('SELECT type, active FROM locations WHERE id = ?', locationId);
+    if (!location) throw new NotFoundError('Location not found.');
+    if (location.type !== 'store') throw new AppError('Only stores mark items sold. Use Stock Out at the warehouse.');
+    if (!location.active) throw new AppError('This store is inactive.');
+    for (const s of sold) {
+      if (!await get('SELECT 1 FROM items WHERE id = ?', s.itemId)) throw new NotFoundError('Item not found.');
+      await changeStock({ itemId: s.itemId, locationId, delta: -s.qty, type: 'sale', reason, userId: user.id });
+    }
+    return sold;
   });
 }
 

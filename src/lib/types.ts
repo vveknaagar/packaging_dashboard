@@ -1,7 +1,7 @@
 export type Role = 'super_admin' | 'warehouse_admin' | 'store_admin';
 export type LocationType = 'warehouse' | 'store';
 export type TransferStatus = 'draft' | 'dispatched' | 'completed' | 'discrepancy' | 'rejected' | 'cancelled';
-export type LedgerType = 'stock_in' | 'stock_out' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'transfer_return';
+export type LedgerType = 'stock_in' | 'stock_out' | 'sale' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'transfer_return';
 
 /** The signed-in user, as loaded fresh from the database on every request. */
 export interface SessionUser {

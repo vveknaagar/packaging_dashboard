@@ -462,6 +462,39 @@ describe('transfers', () => {
   });
 });
 
+describe('sales', () => {
+  test('a store marks items sold: stock goes down and the ledger says Sold, all or nothing', async () => {
+    await stock.adjust({ user: storeA, itemId: boxId, locationId: storeA.location_id!, mode: 'in', qty: '20', reason: 'Opening stock' });
+    await stock.adjust({ user: storeA, itemId: tapeId, locationId: storeA.location_id!, mode: 'in', qty: '5', reason: 'Opening stock' });
+    const box = await qty(boxId, storeA);
+    const tape = await qty(tapeId, storeA);
+
+    await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '3' }, { itemId: tapeId, qty: '2' }], billNo: 'INV-1042', note: 'Walk-in' });
+    assert.equal(await qty(boxId, storeA), box - 3);
+    assert.equal(await qty(tapeId, storeA), tape - 2);
+    const entry = await db.get<{ type: string; qty_change: number; reason: string }>(
+      'SELECT type, qty_change, reason FROM stock_ledger WHERE item_id = ? AND location_id = ? ORDER BY id DESC LIMIT 1', boxId, storeA.location_id!);
+    assert.deepEqual([entry!.type, entry!.qty_change, entry!.reason], ['sale', -3, 'Sold, bill no. INV-1042. Walk-in']);
+
+    // One line short of stock: nothing is taken off.
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }, { itemId: tapeId, qty: String(tape) }], billNo: 'B1', note: '' }), isAppError(/Not enough stock/));
+    assert.equal(await qty(boxId, storeA), box - 3);
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '0' }], billNo: 'B1', note: '' }), isAppError(/greater than zero/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [], billNo: 'B1', note: '' }), isAppError(/at least one item/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }], billNo: '  ', note: '' }), isAppError(/invoice number/));
+  });
+
+  test('only at a store, and only by that store or the Super Admin', async () => {
+    const line = [{ itemId: boxId, qty: '1' }];
+    await assert.rejects(async () => await stock.recordSale({ user: storeB, locationId: storeA.location_id!, lines: line, billNo: 'B1', note: '' }), isAppError(/own store/));
+    await assert.rejects(async () => await stock.recordSale({ user: whAdmin, locationId: storeA.location_id!, lines: line, billNo: 'B1', note: '' }), isAppError(/own store/));
+    await assert.rejects(async () => await stock.recordSale({ user: whAdmin, locationId: whAdmin.location_id!, lines: line, billNo: 'B1', note: '' }), isAppError(/Only stores/));
+    const before = await qty(boxId, storeA);
+    await stock.recordSale({ user: superAdmin, locationId: storeA.location_id!, lines: line, billNo: 'B1', note: '' });
+    assert.equal(await qty(boxId, storeA), before - 1);
+  });
+});
+
 describe('super admin', () => {
   test('can change stock at any location', async () => {
     const before = await qty(tapeId, storeB);

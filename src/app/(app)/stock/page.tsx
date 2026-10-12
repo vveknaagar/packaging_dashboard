@@ -77,6 +77,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           {!location.active && ' This location is inactive.'}
         </>}
       >
+        {canEdit && location.type === 'store' && <Link href={`/stock/sell?location=${location.id}`} className="btn btn-primary">Mark sold</Link>}
         <Link href={`/stock/ledger${locationQuery ? `?location=${locationQuery}` : ''}`} className="btn">Stock ledger</Link>
         {!isStore(user) && <Link href="/stock/matrix" className="btn">Stock matrix</Link>}
       </PageHead>

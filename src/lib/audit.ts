@@ -27,6 +27,7 @@ export const AUDIT_GROUPS: Record<string, Record<string, string>> = {
   Stock: {
     stock_in: 'Stock in',
     stock_out: 'Stock out',
+    items_sold: 'Items sold',
     stock_set: 'Stock adjusted',
   },
   Transfers: {
