@@ -469,28 +469,30 @@ describe('sales', () => {
     const box = await qty(boxId, storeA);
     const tape = await qty(tapeId, storeA);
 
-    await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '3' }, { itemId: tapeId, qty: '2' }], billNo: 'INV-1042', note: 'Walk-in' });
+    await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '3' }, { itemId: tapeId, qty: '2' }], billNo: 'INV-1042', customerName: 'Asha Shah', customerPhone: '98250 12345', note: 'Gift wrap' });
     assert.equal(await qty(boxId, storeA), box - 3);
     assert.equal(await qty(tapeId, storeA), tape - 2);
     const entry = await db.get<{ type: string; qty_change: number; reason: string }>(
       'SELECT type, qty_change, reason FROM stock_ledger WHERE item_id = ? AND location_id = ? ORDER BY id DESC LIMIT 1', boxId, storeA.location_id!);
-    assert.deepEqual([entry!.type, entry!.qty_change, entry!.reason], ['sale', -3, 'Sold, bill no. INV-1042. Walk-in']);
+    assert.deepEqual([entry!.type, entry!.qty_change, entry!.reason], ['sale', -3, 'Sold, bill no. INV-1042, to Asha Shah (98250 12345). Gift wrap']);
 
     // One line short of stock: nothing is taken off.
-    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }, { itemId: tapeId, qty: String(tape) }], billNo: 'B1', note: '' }), isAppError(/Not enough stock/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }, { itemId: tapeId, qty: String(tape) }], billNo: 'B1', customerName: 'C', note: '' }), isAppError(/Not enough stock/));
     assert.equal(await qty(boxId, storeA), box - 3);
-    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '0' }], billNo: 'B1', note: '' }), isAppError(/greater than zero/));
-    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [], billNo: 'B1', note: '' }), isAppError(/at least one item/));
-    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }], billNo: '  ', note: '' }), isAppError(/invoice number/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '0' }], billNo: 'B1', customerName: 'C', note: '' }), isAppError(/greater than zero/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [], billNo: 'B1', customerName: 'C', note: '' }), isAppError(/at least one item/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }], billNo: '  ', customerName: 'C', note: '' }), isAppError(/invoice number/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }], billNo: 'B1', customerName: ' ', note: '' }), isAppError(/customer's name/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeA, locationId: storeA.location_id!, lines: [{ itemId: boxId, qty: '1' }], billNo: 'B1', customerName: 'C', customerPhone: 'call me', note: '' }), isAppError(/customer phone/));
   });
 
   test('only at a store, and only by that store or the Super Admin', async () => {
     const line = [{ itemId: boxId, qty: '1' }];
-    await assert.rejects(async () => await stock.recordSale({ user: storeB, locationId: storeA.location_id!, lines: line, billNo: 'B1', note: '' }), isAppError(/own store/));
-    await assert.rejects(async () => await stock.recordSale({ user: whAdmin, locationId: storeA.location_id!, lines: line, billNo: 'B1', note: '' }), isAppError(/own store/));
-    await assert.rejects(async () => await stock.recordSale({ user: whAdmin, locationId: whAdmin.location_id!, lines: line, billNo: 'B1', note: '' }), isAppError(/Only stores/));
+    await assert.rejects(async () => await stock.recordSale({ user: storeB, locationId: storeA.location_id!, lines: line, billNo: 'B1', customerName: 'C', note: '' }), isAppError(/own store/));
+    await assert.rejects(async () => await stock.recordSale({ user: whAdmin, locationId: storeA.location_id!, lines: line, billNo: 'B1', customerName: 'C', note: '' }), isAppError(/own store/));
+    await assert.rejects(async () => await stock.recordSale({ user: whAdmin, locationId: whAdmin.location_id!, lines: line, billNo: 'B1', customerName: 'C', note: '' }), isAppError(/Only stores/));
     const before = await qty(boxId, storeA);
-    await stock.recordSale({ user: superAdmin, locationId: storeA.location_id!, lines: line, billNo: 'B1', note: '' });
+    await stock.recordSale({ user: superAdmin, locationId: storeA.location_id!, lines: line, billNo: 'B1', customerName: 'C', note: '' });
     assert.equal(await qty(boxId, storeA), before - 1);
   });
 });

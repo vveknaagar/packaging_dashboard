@@ -70,7 +70,7 @@ export function ReceiveForm({ transferId, lines }: { transferId: number; lines: 
         </div>
       )}
       <label className="field">
-        <span>{hasDiscrepancy ? 'Remark (required)' : 'Remark (optional)'}</span>
+        <span>{hasDiscrepancy ? 'Remark' : 'Remark (optional)'}</span>
         <textarea name="remark" rows={2} maxLength={500} required={hasDiscrepancy}
           placeholder={hasDiscrepancy ? 'Explain the difference, for example: 2 boxes damaged in transit' : ''} />
       </label>

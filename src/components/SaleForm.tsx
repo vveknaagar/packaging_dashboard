@@ -28,6 +28,7 @@ export function SaleForm({ locationId, storeName, items }: Props) {
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
   const [search, setSearch] = useState('');
   const [billNo, setBillNo] = useState('');
+  const [customer, setCustomer] = useState('');
 
   // A ticked item needs a whole number from 1 up to the stock on hand.
   const lines = useMemo(() => items.map((item) => {
@@ -39,7 +40,7 @@ export function SaleForm({ locationId, storeName, items }: Props) {
   }), [items, qty, picked]);
 
   const chosen = lines.filter((l) => l.on);
-  const canSave = chosen.length > 0 && chosen.every((l) => l.ready) && billNo.trim() !== '';
+  const canSave = chosen.length > 0 && chosen.every((l) => l.ready) && billNo.trim() !== '' && customer.trim() !== '';
   const units = chosen.reduce((sum, l) => sum + (l.ready ? l.n : 0), 0);
   const needle = search.trim().toLowerCase();
   const visible = lines.filter((l) => !needle || `${l.item.name} ${l.item.size}`.toLowerCase().includes(needle));
@@ -55,14 +56,14 @@ export function SaleForm({ locationId, storeName, items }: Props) {
   }
 
   return (
-    <ActionForm action={recordSaleAction} className="stack" confirm={`Mark ${units} unit(s) as sold on bill ${billNo.trim()}? This takes them off ${storeName}'s stock.`}>
+    <ActionForm action={recordSaleAction} className="stack" confirm={`Mark ${units} unit(s) as sold to ${customer.trim()} on bill ${billNo.trim()}? This takes them off ${storeName}'s stock.`}>
       <input type="hidden" name="location_id" value={locationId} />
       {/* Only ticked items are sent, whatever the search box is hiding. */}
       {chosen.map((l) => <input key={l.item.id} type="hidden" name={`qty_${l.item.id}`} value={l.text} />)}
 
       <div className="card">
         <div className="card-head">
-          <h2>Items sold</h2>
+          <h2 className="req">Items sold</h2>
           <span className="muted">Tick each item sold, then enter how many. {items.length} item(s) in stock at {storeName}</span>
         </div>
         <div className="toolbar">
@@ -102,14 +103,23 @@ export function SaleForm({ locationId, storeName, items }: Props) {
       </div>
 
       <div className="card">
+        <div className="card-head"><h2>Bill and customer</h2></div>
         <div className="form-grid">
           <label className="field">
-            <span>Bill / invoice no. (required)</span>
+            <span>Bill / invoice no.</span>
             <input type="text" name="bill_no" required maxLength={60} value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="Number on the sale invoice" />
           </label>
           <label className="field">
+            <span>Customer name</span>
+            <input type="text" name="customer_name" required maxLength={120} value={customer} onChange={(e) => setCustomer(e.target.value)} autoComplete="off" />
+          </label>
+          <label className="field">
+            <span>Customer phone (optional)</span>
+            <input type="tel" name="customer_phone" maxLength={20} inputMode="tel" pattern="[0-9+\- ]{6,20}" title="Digits, spaces, + or -" autoComplete="off" />
+          </label>
+          <label className="field">
             <span>Note (optional)</span>
-            <input type="text" name="note" maxLength={300} placeholder="e.g. customer name" />
+            <input type="text" name="note" maxLength={300} />
           </label>
         </div>
       </div>

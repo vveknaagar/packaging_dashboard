@@ -142,7 +142,10 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
               >
                 <input type="hidden" name="id" value={t.id} />
                 <h3>Dispatch</h3>
-                <ParcelPhotoInput required />
+                <div className="field">
+                  <span>Parcel photo</span>
+                  <ParcelPhotoInput required />
+                </div>
                 <div className="form-actions start">
                   <SubmitButton pendingLabel="Dispatching…">Dispatch</SubmitButton>
                 </div>

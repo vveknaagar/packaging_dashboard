@@ -56,12 +56,16 @@ export async function recordSaleAction(formData: FormData): Promise<ActionResult
       locationId,
       lines: linesFrom(formData),
       billNo: rawField(formData, 'bill_no'),
+      customerName: rawField(formData, 'customer_name'),
+      customerPhone: rawField(formData, 'customer_phone'),
       note: rawField(formData, 'note'),
     });
     const location = await get<{ name: string }>('SELECT name FROM locations WHERE id = ?', locationId);
     const list = (await Promise.all(sold.map(async (s) => `${await itemLabel(s.itemId)} × ${fmtNum(s.qty)}`))).join(', ');
     const note = field(formData, 'note');
-    await audit(user, 'items_sold', `${location?.name ?? ''} · Bill ${field(formData, 'bill_no')}`, `${list}${note ? `. Note: ${note}` : ''}`);
+    const phone = field(formData, 'customer_phone');
+    const customer = `${field(formData, 'customer_name')}${phone ? ` (${phone})` : ''}`;
+    await audit(user, 'items_sold', `${location?.name ?? ''} · Bill ${field(formData, 'bill_no')}`, `Customer: ${customer}. ${list}${note ? `. Note: ${note}` : ''}`);
     const units = sold.reduce((sum, s) => sum + s.qty, 0);
     return { ok: `Marked ${fmtNum(units)} unit(s) of ${sold.length} item(s) as sold.`, redirectTo: `/stock?location=${locationId}` };
   });

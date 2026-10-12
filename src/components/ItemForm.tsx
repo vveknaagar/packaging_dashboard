@@ -10,16 +10,16 @@ export function ItemForm({ item, units }: { item?: ItemRow; units: string[] }) {
     <ActionForm action={saveItemAction} className="card stack">
       {item && <input type="hidden" name="id" value={item.id} />}
       <div className="field">
-        <span>Image{item ? ' (choose a file only to replace it)' : ' (required)'}</span>
+        <span>Image{item ? ' (choose a file only to replace it)' : ''}</span>
         <ImageInput name="image" required={!item} currentSrc={item?.image ? `/uploads/${item.image}` : undefined} />
       </div>
       <div className="form-grid">
         <label className="field">
-          <span>Name (required)</span>
+          <span>Name</span>
           <input name="name" type="text" required maxLength={120} defaultValue={item?.name} placeholder="Kraft Box" />
         </label>
         <label className="field">
-          <span>Size (required)</span>
+          <span>Size</span>
           <input name="size" type="text" required maxLength={80} defaultValue={item?.size} placeholder="Small 6 x 4 x 2 in" />
         </label>
         <label className="field">

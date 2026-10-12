@@ -134,7 +134,7 @@ export function TransferForm({
 
       <div className="card">
         <div className="card-head">
-          <h2>Items to send</h2>
+          <h2 className="req">Items to send</h2>
           <span className="muted">Tick an item, then enter its quantity. {inStock} of {items.length} item(s) in stock at {sourceName}</span>
         </div>
         <div className="toolbar">

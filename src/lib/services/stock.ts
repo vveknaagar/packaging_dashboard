@@ -112,6 +112,9 @@ interface SaleInput {
   lines: SaleLine[];
   /** The number on the store's sale invoice. Required. */
   billNo: unknown;
+  /** Who bought: name required, phone optional. */
+  customerName: unknown;
+  customerPhone?: unknown;
   note: unknown;
 }
 
@@ -119,10 +122,14 @@ interface SaleInput {
  * A store marks items as sold: each line takes its quantity off the store's stock,
  * all together or not at all. Returns the item ids and quantities taken off.
  */
-export async function recordSale({ user, locationId, lines, billNo, note }: SaleInput) {
+export async function recordSale({ user, locationId, lines, billNo, customerName, customerPhone, note }: SaleInput) {
   if (!canEditStock(user, locationId)) throw new ForbiddenError('You can only mark items sold at your own store.');
   const bill = clean(billNo, 60);
   if (!bill) throw new AppError('Enter the bill / invoice number of the sale.');
+  const customer = clean(customerName, 120);
+  if (!customer) throw new AppError("Enter the customer's name.");
+  const phone = clean(customerPhone, 20);
+  if (phone && !/^[0-9+ -]{6,20}$/.test(phone)) throw new AppError('The customer phone can only have digits, spaces, + or -.');
   const sold: { itemId: number; qty: number }[] = [];
   for (const line of lines) {
     const qty = parseQty(line.qty);
@@ -132,7 +139,7 @@ export async function recordSale({ user, locationId, lines, billNo, note }: Sale
   }
   if (sold.length === 0) throw new AppError('Choose at least one item and the quantity sold.');
   const extra = clean(note, 300);
-  const reason = `Sold, bill no. ${bill}${extra ? `. ${extra}` : ''} ${onBehalfNote(user)}`.trim();
+  const reason = `Sold, bill no. ${bill}, to ${customer}${phone ? ` (${phone})` : ''}${extra ? `. ${extra}` : ''} ${onBehalfNote(user)}`.trim();
 
   return tx(async () => {
     const location = await get<{ type: string; active: number }>('SELECT type, active FROM locations WHERE id = ?', locationId);

@@ -412,6 +412,10 @@ a.row-link:hover { background: var(--hover-soft); text-decoration: none; }
 
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .field > span:first-child { font-weight: 600; font-size: 0.9rem; }
+/* A red star after the label of anything that must be filled in. It follows the required
+   attribute, so a field that becomes required (a remark on a discrepancy) gains it as it does.
+   .req marks a heading over required choices that have no label of their own. */
+:is(.field, .recv-field):has([required]) > span:first-child::after, .req::after { content: ' *'; color: var(--crit); font-weight: 700; }
 input[type="text"], input[type="search"], input[type="password"], input[type="number"], input[type="tel"], select, textarea {
   width: 100%; min-height: 42px; padding: 9px 11px;
   border: 1px solid var(--line-strong); border-radius: 8px;

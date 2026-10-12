@@ -52,7 +52,7 @@ const ALL: Record<string, GuideSection> = {
       'Open Stock to see the quantity of every item at your location.',
       'To record new stock arriving from a supplier, click Update next to the item, choose Stock In, enter the quantity and a reason, and save.',
       'To record stock used up, choose Stock Out. To correct a count, choose Adjustment and enter the real quantity.',
-      'At a store, click Mark sold to record what was sold: tick each item, enter how many, enter the bill / invoice number (required), and click Mark sold. The quantities come off the store\'s stock.',
+      'At a store, click Mark sold to record what was sold: tick each item, enter how many, enter the bill / invoice number and the customer\'s name (phone if you have it), and click Mark sold. The quantities come off the store\'s stock.',
       'Every change is saved in the Stock ledger with your name and the reason.',
     ],
     tips: ['Stock moving between locations is done with a Transfer, not with Stock In / Out.'],

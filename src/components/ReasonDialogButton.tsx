@@ -30,7 +30,7 @@ export function ReasonDialogButton({
         <ActionForm action={action} onSuccess={() => setOpen(false)} className="stack">
           <input type="hidden" name="id" value={id} />
           <label className="field">
-            <span>{reasonRequired ? 'Reason (required)' : 'Reason (optional)'}</span>
+            <span>{reasonRequired ? 'Reason' : 'Reason (optional)'}</span>
             <textarea name="reason" rows={3} maxLength={500} required={reasonRequired} autoFocus />
           </label>
           <div className="form-actions">

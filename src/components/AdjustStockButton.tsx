@@ -83,7 +83,7 @@ export function AdjustStockButton({ itemId, itemName, itemSize, unit, qty, locat
             </p>
           )}
           <label className="field">
-            <span>Reason (required)</span>
+            <span>Reason</span>
             <input name="reason" type="text" required maxLength={300} list={`reasons-${mode}`} placeholder="Why is the stock changing?" />
             <datalist id={`reasons-${mode}`}>
               {REASONS[mode].map((r) => <option key={r} value={r} />)}
