@@ -34,7 +34,7 @@ export function LocationForm({ location }: { location?: LocationRow }) {
               defaultValue={location?.gstin} autoCapitalize="characters" placeholder="24ABCDE1234F1Z5"
               title="15-character GSTIN, for example 24ABCDE1234F1Z5"
             />
-            <span className="hint">Printed on transfer slips.</span>
+            <span className="hint">Printed on delivery challans.</span>
           </label>
           <label className="field span-2">
             <span>Address{isStore ? '' : ' (optional)'}</span>

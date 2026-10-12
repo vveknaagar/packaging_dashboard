@@ -77,21 +77,21 @@ const ALL: Record<string, GuideSection> = {
   },
   pricing: {
     id: 'pricing', href: '/pricing', title: 'Price & HSN',
-    summary: 'Set the price and HSN code of each item. They are printed on transfer slips.',
+    summary: 'Set the price and HSN code of each item. They are printed on delivery challans.',
     steps: [
       'Open Price & HSN. Type the HSN code (4, 6 or 8 digits) and the price in rupees for each item.',
       'Click Save changes. Only the rows you changed are saved.',
       'Choose "Missing price or HSN" in the filter to find items that still need one.',
     ],
-    tips: ['A transfer keeps the price it had when it was dispatched, so changing a price later does not change old slips.'],
+    tips: ['A transfer keeps the price it had when it was dispatched, so changing a price later does not change old delivery challans.'],
   },
   transfers: {
     id: 'transfers', href: '/transfers', title: 'Transfers',
     summary: 'Every transfer in and out of your location, and the ones waiting for your approval.',
     steps: [
       'Open Transfers. Use the tabs to switch between Incoming and Outgoing, and the status filter to find a transfer.',
-      'Click a transfer to see its items, the parcel photo, its timeline and the transfer slip.',
-      'Click Transfer slip to print or save it as PDF to send with the parcel.',
+      'Click a transfer to see its items, the parcel photo, its timeline and the delivery challan.',
+      'Click Delivery Challan to print or save it as PDF to send with the parcel.',
     ],
   },
   newTransfer: {
@@ -149,7 +149,7 @@ const ALL: Record<string, GuideSection> = {
       'Open Logistic partners. Enter the company name, and a contact person and phone if you have them, then click Add partner.',
       'To change one, click Edit, make the change and click Save changes.',
       'If you stop using a company, Deactivate it. Senders can no longer choose it, and past transfers still show it.',
-      'Senders pick the partner on the New transfer form. It is printed on the transfer slip.',
+      'Senders pick the partner on the New transfer form. It is printed on the delivery challan.',
     ],
   },
   users: {

@@ -245,7 +245,7 @@ async function dispatchInTx(transfer: TransferRow, user: SessionUser, photo: Pro
     });
     units += line.qty_sent;
   }
-  // Freeze each item's HSN code and price on the line, so later price changes do not alter this slip.
+  // Freeze each item's HSN code and price on the line, so later price changes do not alter this delivery challan.
   await run(`UPDATE transfer_items SET
          hsn = (SELECT hsn FROM items WHERE items.id = transfer_items.item_id),
          rate_paise = (SELECT price_paise FROM items WHERE items.id = transfer_items.item_id)

@@ -8,9 +8,9 @@ import { requireUser } from '@/lib/session';
 import { TRANSPORT_MODES } from '@/lib/transport';
 import { fmtDateTime, fmtMoney, fmtNum, parseId } from '@/lib/util';
 
-export const metadata: Metadata = { title: 'Transfer slip' };
+export const metadata: Metadata = { title: 'Delivery Challan' };
 
-/** A print-ready page. "Print / Save as PDF" in the browser produces the slip. */
+/** A print-ready page. "Print / Save as PDF" in the browser produces the delivery challan. */
 export default async function TransferSlipPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const id = parseId((await params).id);
@@ -38,7 +38,7 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
           <img className="slip-logo" src="/slip-logo.png" alt="Mayavé" />
           <div>
             <div className="slip-app">Mayave Item Transfer</div>
-            <h1>Stock Transfer Slip</h1>
+            <h1>Delivery Challan</h1>
           </div>
         </div>
         <div className="slip-number">

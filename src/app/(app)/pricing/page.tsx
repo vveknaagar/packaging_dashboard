@@ -16,7 +16,7 @@ const PAGE_SIZE = 50;
 
 /**
  * The Super Admin's price list. Prices and HSN codes are seen and changed only
- * here; each dispatched transfer copies them onto its slip.
+ * here; each dispatched transfer copies them onto its delivery challan.
  */
 export default async function PricingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
@@ -105,7 +105,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               </table>
             </div>
             <div className="form-actions">
-              <span className="muted">Changes apply to transfers dispatched from now on. Slips already dispatched keep their price.</span>
+              <span className="muted">Changes apply to transfers dispatched from now on. Delivery challans of transfers already dispatched keep their price.</span>
               <SubmitButton pendingLabel="Saving…">Save changes</SubmitButton>
             </div>
           </>

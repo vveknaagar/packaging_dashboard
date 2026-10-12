@@ -42,7 +42,7 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
     <>
       <PageHead title={t.number} sub={<>{t.source_name} → {t.dest_name}</>}>
         <StatusBadge status={t.status} />
-        {t.status !== 'draft' && <Link href={`/transfers/${t.id}/slip`} className="btn" target="_blank">Transfer slip</Link>}
+        {t.status !== 'draft' && <Link href={`/transfers/${t.id}/slip`} className="btn" target="_blank">Delivery Challan</Link>}
       </PageHead>
 
       {t.status === 'dispatched' && (

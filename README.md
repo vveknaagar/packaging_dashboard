@@ -174,4 +174,4 @@ test/               Automated tests.
 - Reports with Excel and PDF export (stock by location, item-wise stock, transfer register,
   discrepancy report, stock ledger export)
 - A separate Audit Log screen (the stock ledger and each transfer's timeline exist today)
-- Server-generated PDF for the transfer slip (today it is the browser's print to PDF)
+- Server-generated PDF for the delivery challan (today it is the browser's print to PDF)
