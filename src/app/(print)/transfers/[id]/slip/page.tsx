@@ -35,7 +35,7 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
       <header className="slip-head">
         <div className="slip-brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="slip-logo" src="/slip-logo.png" alt="Mayavé" />
+          <img className="slip-logo" src="/slip-logo.png" alt="Dholakia Retail" />
           <div>
             <div className="slip-app">Mayave Item Transfer</div>
             <h1>Delivery Challan</h1>
