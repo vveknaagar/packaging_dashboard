@@ -175,8 +175,9 @@ const ALL: Record<string, GuideSection> = {
     summary: 'Every action by every user: sign-ins, items, prices, stock, transfers, stores and users.',
     steps: [
       'Open Audit log to see who did what and when, newest first.',
-      'Filter by user, by type of activity or by date, or search for an item, transfer number or store.',
-      'Click Download CSV to open the filtered list in Excel.',
+      'Filter by store, by user, by type of activity or by date, or search for an item, transfer number or store.',
+      'Open By store and user to see each store\'s users with how many times they did each activity. Click a number to see those entries.',
+      'Click Download CSV to open the filtered list, or the store and user counts, in Excel.',
       'Entries cannot be edited or deleted.',
     ],
   },

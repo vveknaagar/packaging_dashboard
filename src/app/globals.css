@@ -448,6 +448,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .toolbar-date input { width: auto; }
 .audit-detail { white-space: pre-line; min-width: 220px; max-width: 520px; font-size: 0.9rem; }
 .audit-failed td:first-child { box-shadow: inset 3px 0 0 var(--warn-ink); }
+.audit-breakdown { max-width: 520px; margin: 4px 0 0; font-size: 0.82rem; }
 .toolbar select { flex: 1 1 150px; width: auto; }
 @media (min-width: 640px) { .toolbar select { flex: 0 1 190px; } }
 

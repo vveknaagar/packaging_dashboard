@@ -126,6 +126,8 @@ export interface AuditRow {
 
 export interface AuditFilters {
   user: number | null;
+  /** A location: what its users did. */
+  store: number | null;
   /** One action, or a whole group ("group:Stock"). */
   action: string;
   from: string;
@@ -142,10 +144,14 @@ const dayStart = (day: string, plusDays = 0) => {
 };
 
 export function readFilters(get: (name: string) => string): AuditFilters {
-  const user = Number(get('user'));
+  const id = (name: string) => {
+    const n = Number(get(name));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
   const action = get('action');
   return {
-    user: Number.isInteger(user) && user > 0 ? user : null,
+    user: id('user'),
+    store: id('store'),
     action: action in AUDIT_LABELS || (action.startsWith('group:') && action.slice(6) in AUDIT_GROUPS) ? action : '',
     from: DATE.test(get('from')) ? get('from') : '',
     to: DATE.test(get('to')) ? get('to') : '',
@@ -158,6 +164,11 @@ export function filterSql(f: AuditFilters): { where: string; params: (string | n
   const where: string[] = [];
   const params: (string | number)[] = [];
   if (f.user) { where.push('(a.user_id = ? OR a.by_user_id = ?)'); params.push(f.user, f.user); }
+  // Entries carry the location's name as it was then; its users' ids also catch entries from before a rename.
+  if (f.store) {
+    where.push('(a.user_id IN (SELECT id FROM users WHERE location_id = ?) OR a.location_name = (SELECT name FROM locations WHERE id = ?))');
+    params.push(f.store, f.store);
+  }
   if (f.action.startsWith('group:')) {
     const keys = Object.keys(AUDIT_GROUPS[f.action.slice(6)]);
     where.push(`a.action IN (${keys.map(() => '?').join(', ')})`);
@@ -172,3 +183,59 @@ export function filterSql(f: AuditFilters): { where: string; params: (string | n
   }
   return { where: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 }
+
+/* ---------- by store and user ---------- */
+
+export interface UserActivity {
+  user_id: number | null;
+  user_name: string;
+  role: string;
+  /** Entries per action. */
+  actions: Record<string, number>;
+  total: number;
+  last: string;
+}
+
+export interface StoreActivity {
+  /** The location's name as recorded; '' for entries tied to no location (Super Admin, failed sign-ins). */
+  store: string;
+  users: UserActivity[];
+  actions: Record<string, number>;
+  total: number;
+  last: string;
+}
+
+/** Entries per location, per user and per action, for the same filters as the list. */
+export async function activityByStore(f: AuditFilters): Promise<StoreActivity[]> {
+  const { where, params } = filterSql(f);
+  const rows = await all<{ location_name: string; user_id: number | null; user_name: string; role: string; action: string; n: number; last: string }>(
+    `SELECT a.location_name, a.user_id, a.user_name, a.role, a.action, COUNT(*) AS n, MAX(a.ts) AS last
+     FROM audit_log a ${where}
+     GROUP BY a.location_name, a.user_id, a.user_name, a.role, a.action`, ...params);
+
+  const stores = new Map<string, StoreActivity & { byUser: Map<string, UserActivity> }>();
+  for (const r of rows) {
+    let store = stores.get(r.location_name);
+    if (!store) stores.set(r.location_name, store = { store: r.location_name, users: [], actions: {}, total: 0, last: '', byUser: new Map() });
+    const key = `${r.user_id ?? ''}|${r.user_name}`;
+    let person = store.byUser.get(key);
+    if (!person) store.byUser.set(key, person = { user_id: r.user_id, user_name: r.user_name, role: r.role, actions: {}, total: 0, last: '' });
+    for (const tally of [store, person]) {
+      tally.actions[r.action] = (tally.actions[r.action] ?? 0) + r.n;
+      tally.total += r.n;
+      if (r.last > tally.last) tally.last = r.last;
+    }
+  }
+  return [...stores.values()]
+    .map(({ byUser, ...store }) => ({ ...store, users: [...byUser.values()].sort((a, b) => b.total - a.total || a.user_name.localeCompare(b.user_name)) }))
+    // Locations by name, then the entries that belong to no location.
+    .sort((a, b) => Number(!a.store) - Number(!b.store) || a.store.localeCompare(b.store));
+}
+
+/** Entries in one group of actions ("Stock") from a tally. */
+export const groupCount = (actions: Record<string, number>, group: string): number =>
+  Object.keys(AUDIT_GROUPS[group]).reduce((sum, action) => sum + (actions[action] ?? 0), 0);
+
+/** Every action in a tally with its count, in the order the filter lists them. */
+export const actionCounts = (actions: Record<string, number>) =>
+  Object.keys(AUDIT_LABELS).filter((action) => actions[action]).map((action) => ({ action, label: AUDIT_LABELS[action], n: actions[action] }));
