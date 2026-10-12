@@ -366,13 +366,22 @@ a.row-link:hover { background: var(--hover-soft); text-decoration: none; }
   .table.cards-wide td.cell-actions > :not(dialog) { margin: 0 6px 0 0; }
 }
 
-/* No left padding: scrolled location names would show through the gap beside the pinned item column. */
-.matrix-wrap { margin-left: 0; padding-left: 0; }
+/* The matrix scrolls inside its own box, so the heading row (Item, Total and every location)
+   stays on top while scrolling down, and Item and Total stay on the left while scrolling across.
+   No left padding: scrolled location names would show through the gap beside the pinned columns. */
+.matrix-wrap { --matrix-item: 220px; margin-left: 0; padding-left: 0; overflow: auto; max-height: calc(100dvh - 120px); }
 .matrix th, .matrix td { white-space: nowrap; }
-.matrix .sticky-col { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 190px; max-width: 250px; white-space: normal; box-shadow: 1px 0 0 var(--line); }
-/* On a phone the pinned item column gives way to the numbers. */
+.matrix thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 0; box-shadow: inset 0 -1px 0 var(--line-strong); }
+.matrix .sticky-col, .matrix .sticky-total { position: sticky; z-index: 1; background: var(--surface); }
+.matrix .sticky-col { left: 0; width: var(--matrix-item); min-width: var(--matrix-item); max-width: var(--matrix-item); white-space: normal; }
+.matrix .sticky-total { left: var(--matrix-item); min-width: 72px; box-shadow: 1px 0 0 var(--line); }
+/* The corner cells stay above both the scrolled heading and the scrolled rows. */
+.matrix thead .sticky-col, .matrix thead .sticky-total { z-index: 3; }
+.matrix thead .sticky-total { box-shadow: inset 0 -1px 0 var(--line-strong), 1px 0 0 var(--line); }
+/* On a phone the pinned columns give way to the numbers. */
 @media (max-width: 520px) {
-  .matrix .sticky-col { min-width: 132px; max-width: 40vw; }
+  .matrix-wrap { --matrix-item: 120px; }
+  .matrix .sticky-total { min-width: 56px; }
   .matrix .thumb { display: none; }
 }
 

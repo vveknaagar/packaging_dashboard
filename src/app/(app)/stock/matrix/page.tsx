@@ -80,7 +80,7 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
               <thead>
                 <tr>
                   <th className="sticky-col">Item</th>
-                  <th className="num">Total</th>
+                  <th className="num sticky-total">Total</th>
                   {locations.map((l) => (
                     <th key={l.id} className="num">
                       <Link href={`/stock?location=${l.id}`}>{l.name}</Link>
@@ -101,7 +101,7 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
                         </div>
                       </div>
                     </td>
-                    <td className="num"><strong>{fmtNum(item.total)}</strong></td>
+                    <td className="num sticky-total"><strong>{fmtNum(item.total)}</strong></td>
                     {locations.map((l) => {
                       const key = `${item.id}:${l.id}`;
                       return (
