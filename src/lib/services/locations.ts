@@ -12,6 +12,10 @@ export interface LocationInput {
   name: unknown;
   code: unknown;
   address: unknown;
+  /** City, state and PIN code: required for a store, printed on its delivery challans. */
+  city?: unknown;
+  state?: unknown;
+  pincode?: unknown;
   gstin: unknown;
 }
 
@@ -30,18 +34,25 @@ function assertSuper(user: SessionUser) {
 /** 15 characters: state code, PAN, entity number, Z, check character. */
 const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
-/** A store must have an address and a GSTIN; for the warehouse they are optional. */
+/** A store must have an address, city, state, PIN code and GSTIN; for the warehouse they are optional. */
 function validate(input: LocationInput, type: LocationType) {
   const name = clean(input.name, 80);
   const code = clean(input.code, 12).toUpperCase();
   const address = clean(input.address, 300);
+  const city = clean(input.city, 60);
+  const state = clean(input.state, 60);
+  const pincode = clean(input.pincode, 10).replace(/\s/g, '');
   const gstin = clean(input.gstin, 30).replace(/\s/g, '').toUpperCase();
   if (!name) throw new AppError('Name is required.');
   if (!/^[A-Z0-9-]{1,12}$/.test(code)) throw new AppError('Code is required: up to 12 letters, numbers or dashes.');
   if (type === 'store' && !address) throw new AppError('Address is required for a store.');
+  if (type === 'store' && !city) throw new AppError('City is required for a store.');
+  if (type === 'store' && !state) throw new AppError('State is required for a store.');
+  if (type === 'store' && !pincode) throw new AppError('PIN code is required for a store.');
+  if (pincode && !/^\d{6}$/.test(pincode)) throw new AppError('PIN code must be 6 digits.');
   if (type === 'store' && !gstin) throw new AppError('GSTIN is required for a store.');
   if (gstin && !GSTIN_PATTERN.test(gstin)) throw new AppError('GSTIN must be 15 characters, for example 24ABCDE1234F1Z5.');
-  return { name, code, address, gstin };
+  return { name, code, address, city, state, pincode, gstin };
 }
 
 async function assertCodeFree(code: string, exceptId = 0) {
@@ -68,8 +79,8 @@ export async function createStore(actor: SessionUser, input: LocationInput, admi
   return tx(async () => {
     await assertCodeFree(data.code);
     const id = await insert(
-      "INSERT INTO locations (type, name, code, address, gstin, created_at) VALUES ('store', ?, ?, ?, ?, ?)",
-      data.name, data.code, data.address, data.gstin, now());
+      "INSERT INTO locations (type, name, code, address, city, state, pincode, gstin, created_at) VALUES ('store', ?, ?, ?, ?, ?, ?, ?, ?)",
+      data.name, data.code, data.address, data.city, data.state, data.pincode, data.gstin, now());
     if (adminData) {
       if (await get('SELECT 1 FROM users WHERE username = ?', adminData.username)) {
         throw new AppError(`The username "${adminData.username}" is already taken.`);
@@ -87,7 +98,8 @@ export async function updateLocation(actor: SessionUser, id: number, input: Loca
     if (!location) throw new NotFoundError('Location not found.');
     const data = validate(input, location.type);
     await assertCodeFree(data.code, id);
-    await run('UPDATE locations SET name = ?, code = ?, address = ?, gstin = ? WHERE id = ?', data.name, data.code, data.address, data.gstin, id);
+    await run('UPDATE locations SET name = ?, code = ?, address = ?, city = ?, state = ?, pincode = ?, gstin = ? WHERE id = ?',
+      data.name, data.code, data.address, data.city, data.state, data.pincode, data.gstin, id);
   });
 }
 

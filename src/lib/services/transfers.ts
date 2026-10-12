@@ -67,6 +67,7 @@ export function getTransfer(id: number): Promise<TransferDetail | undefined> {
             (SELECT u.phone FROM users u WHERE u.location_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS source_phone,
             d.name AS dest_name, d.code AS dest_code,
             d.address AS dest_address, d.gstin AS dest_gstin,
+            d.city AS dest_city, d.state AS dest_state, d.pincode AS dest_pincode,
             (SELECT u.name FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_contact,
             (SELECT u.phone FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_phone,
             cu.name AS created_by_name, du.name AS dispatched_by_name,

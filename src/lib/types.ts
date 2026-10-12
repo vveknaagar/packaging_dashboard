@@ -22,6 +22,9 @@ export interface LocationRow {
   name: string;
   code: string;
   address: string;
+  city: string;
+  state: string;
+  pincode: string;
   gstin: string;
   active: number;
   created_at: string;
@@ -91,6 +94,9 @@ export interface TransferDetail extends TransferRow {
   dest_name: string;
   dest_code: string;
   dest_address: string;
+  dest_city: string;
+  dest_state: string;
+  dest_pincode: string;
   dest_gstin: string;
   dest_contact: string | null;
   dest_phone: string | null;

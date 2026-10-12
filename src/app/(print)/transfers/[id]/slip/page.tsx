@@ -6,9 +6,27 @@ import { canViewTransfer } from '@/lib/permissions';
 import { getLines, getTransfer, STATUS_LABELS } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
 import { TRANSPORT_MODES } from '@/lib/transport';
-import { fmtDateTime, fmtMoney, fmtNum, parseId } from '@/lib/util';
+import { fmtDate, fmtMoney, fmtNum, parseId } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Delivery Challan' };
+
+/** The company that owns every location, named on the challan and in its certificate line. */
+const COMPANY = 'Dholakia Retail Private Limited';
+
+/** "Dholakia Retail Private Limited - Central IKON - Noida" reads "Central IKON, Noida": the company has its own line. */
+function placeName(name: string): string {
+  const prefix = new RegExp(`^${COMPANY}\\s*[-–—]\\s*`, 'i');
+  return name.replace(prefix, '').replace(/\s*[–—]\s*|\s+-\s*|\s*-\s+/g, ', ');
+}
+
+/** Rupees without the sign, for columns headed "Rate ₹" and "Amount ₹". */
+const amount = (paise: number) => fmtMoney(paise).replace('₹', '');
+
+/** "Gift box Large (EVA 4+5) (Sleeve + Card)" shows as "Gift box Large" over "EVA 4+5 · Sleeve + Card". */
+function splitName(name: string): { main: string; sub: string } {
+  const parts = [...name.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim()).filter(Boolean);
+  return { main: name.replace(/\s*\([^)]*\)/g, '').trim() || name, sub: parts.join(' · ') };
+}
 
 /** A print-ready page. "Print / Save as PDF" in the browser produces the delivery challan. */
 export default async function TransferSlipPage({ params }: { params: Promise<{ id: string }> }) {
@@ -24,6 +42,27 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
   // Value of the goods sent, at the prices frozen on dispatch.
   const totalValue = lines.reduce((n, l) => n + (l.rate_paise ?? 0) * l.qty_sent, 0);
   const unpriced = lines.filter((l) => l.rate_paise === null).length;
+  const units = new Set(lines.map((l) => l.unit.toLowerCase()));
+  const totalUnit = units.size === 1 ? [...units][0] : '';
+  const challanDate = fmtDate(t.dispatched_at) || '—';
+
+  // Where the parcel is going and how, for the certificate line.
+  const destPlace = [t.dest_city, [t.dest_state, t.dest_pincode].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+    || t.dest_address.split('\n').at(-1) || placeName(t.dest_name);
+  const carrier = t.partner_name
+    ? `through ${t.partner_name}`
+    : `by ${(TRANSPORT_MODES[t.transport_mode] ?? 'own arrangement').replace(/^By /i, '').toLowerCase()}`;
+
+  const party = (role: string, name: string, code: string, address: string, gstin: string, contact: string | null, phone: string | null) => (
+    <div className="slip-party">
+      <h2>{role}</h2>
+      <div className="slip-party-name"><strong>{placeName(name)}</strong> <span className="slip-code">{code}</span></div>
+      <div>{COMPANY}</div>
+      <div className="slip-address">{address || '—'}</div>
+      {gstin && <div className="slip-code slip-gstin">GSTIN {gstin}</div>}
+      {(contact || phone) && <div className="slip-contact">{[contact, phone].filter(Boolean).join(' · ')}</div>}
+    </div>
+  );
 
   return (
     <div className="slip">
@@ -33,43 +72,41 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
       </div>
 
       <header className="slip-head">
-        <div className="slip-brand">
+        <div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="slip-logo" src="/slip-logo.png" alt="Dholakia Retail" />
-          <div>
-            <div className="slip-app">Mayave Item Transfer</div>
-            <h1>Delivery Challan</h1>
-          </div>
+          <div className="slip-app">Mayave · Item Transfer</div>
+          <h1>Delivery Challan</h1>
         </div>
-        <div className="slip-number">
-          <strong>{t.number}</strong>
-          <span>{STATUS_LABELS[t.status]}</span>
+        <div className="slip-meta">
+          <span className={`slip-status slip-status-${t.status}`}>{STATUS_LABELS[t.status]}</span>
+          <div className="slip-meta-row">
+            <div><span>Challan no.</span><strong className="slip-code">{t.number}</strong></div>
+            <div><span>Date</span><strong>{challanDate}</strong></div>
+          </div>
         </div>
       </header>
 
       <section className="slip-parties">
-        <div>
-          <h2>Sender</h2>
-          <strong>{t.source_name} ({t.source_code})</strong>
-          <div className="slip-address">{t.source_address || '—'}</div>
-          <div>GSTIN: {t.source_gstin || '—'}</div>
-          {(t.source_contact || t.source_phone) && <div>{[t.source_contact, t.source_phone].filter(Boolean).join(' · ')}</div>}
-        </div>
-        <div>
-          <h2>Deliver to</h2>
-          <strong>{t.dest_name} ({t.dest_code})</strong>
-          <div className="slip-address">{t.dest_address || '—'}</div>
-          <div>GSTIN: {t.dest_gstin || '—'}</div>
-          {(t.dest_contact || t.dest_phone) && <div>{[t.dest_contact, t.dest_phone].filter(Boolean).join(' · ')}</div>}
-        </div>
-        <div>
+        {party('From', t.source_name, t.source_code, t.source_address, t.source_gstin, t.source_contact, t.source_phone)}
+        {party('Deliver to', t.dest_name, t.dest_code, t.dest_address, t.dest_gstin, t.dest_contact, t.dest_phone)}
+        <div className="slip-party slip-transport">
           <h2>Transport</h2>
-          <div>Mode: {TRANSPORT_MODES[t.transport_mode] ?? '—'}</div>
-          {t.partner_name && <div>Logistic partner: {t.partner_name}{t.partner_phone ? ` · ${t.partner_phone}` : ''}</div>}
-          {t.transport_ref && <div>Vehicle / LR / docket: {t.transport_ref}</div>}
-          <div>Dispatched: {fmtDateTime(t.dispatched_at) || '—'}</div>
-          <div>Received: {fmtDateTime(t.received_at) || '—'}</div>
+          <dl>
+            <dt>Delivery challan date</dt>
+            <dd>{challanDate}</dd>
+            <dt>Logistic partner</dt>
+            <dd>{t.partner_name ? `${t.partner_name}${t.partner_phone ? ` · ${t.partner_phone}` : ''}` : 'Own arrangement'}</dd>
+            {t.transport_ref && <><dt>Vehicle / LR / docket</dt><dd>{t.transport_ref}</dd></>}
+          </dl>
         </div>
+      </section>
+
+      <section className="slip-certificate">
+        <h2>TO WHOMSOEVER IT MAY CONCERN</h2>
+        <p>
+          This is to certify that we, {COMPANY}, are dispatching the following material to <strong>{destPlace}</strong> {carrier}.
+        </p>
       </section>
 
       <div className="slip-table-wrap">
@@ -80,55 +117,70 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
               <th>Item</th>
               <th>Size</th>
               <th>HSN</th>
-              <th className="num">Qty sent</th>
-              <th className="num">Rate (₹)</th>
-              <th className="num">Amount (₹)</th>
-              <th className="num">Qty received</th>
+              <th className="num">Sent</th>
+              <th className="num">Rate ₹</th>
+              <th className="num">Amount ₹</th>
+              <th className="num">Received</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((l, index) => (
-              <tr key={l.id}>
-                <td>{index + 1}</td>
-                <td>{l.name}</td>
-                <td>{l.size}</td>
-                <td>{l.hsn || '—'}</td>
-                <td className="num">{fmtNum(l.qty_sent)} {l.unit}</td>
-                <td className="num">{l.rate_paise === null ? '—' : fmtMoney(l.rate_paise)}</td>
-                <td className="num">{l.rate_paise === null ? '—' : fmtMoney(l.rate_paise * l.qty_sent)}</td>
-                <td className="num">{received ? fmtNum(l.qty_received) : ''}</td>
-              </tr>
-            ))}
+            {lines.map((l, index) => {
+              const { main, sub } = splitName(l.name);
+              const short = received && l.qty_received !== l.qty_sent;
+              return (
+                <tr key={l.id}>
+                  <td className="slip-index">{index + 1}</td>
+                  <td>
+                    <div>{main}</div>
+                    {sub && <div className="slip-sub">{sub}</div>}
+                  </td>
+                  <td className="slip-code">{l.size}</td>
+                  <td className="slip-code">{l.hsn || '—'}</td>
+                  <td className="num">{fmtNum(l.qty_sent)} <span className="slip-unit">{l.unit.toLowerCase()}</span></td>
+                  <td className="num">{l.rate_paise === null ? '—' : amount(l.rate_paise)}</td>
+                  <td className="num">{l.rate_paise === null ? '—' : amount(l.rate_paise * l.qty_sent)}</td>
+                  <td className={`num slip-received${short ? ' differs' : ''}`}>{received ? <>{fmtNum(l.qty_received)}{short ? '' : ' ✓'}</> : ''}</td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4}>Total ({lines.length} item(s))</td>
-              <td className="num">{fmtNum(totalSent)}</td>
               <td />
-              <td className="num">{fmtMoney(totalValue)}{unpriced ? ' *' : ''}</td>
-              <td className="num">{received ? fmtNum(totalReceived) : ''}</td>
+              <td colSpan={3}>Total · {lines.length} {lines.length === 1 ? 'item' : 'items'}</td>
+              <td className="num">{fmtNum(totalSent)} <span className="slip-unit">{totalUnit}</span></td>
+              <td />
+              <td className="num">{amount(totalValue)}{unpriced ? ' *' : ''}</td>
+              <td className={`num slip-received${received && totalReceived !== totalSent ? ' differs' : ''}`}>
+                {received ? <>{fmtNum(totalReceived)}{totalReceived === totalSent ? ' ✓' : ''}</> : ''}
+              </td>
             </tr>
           </tfoot>
         </table>
       </div>
 
+      <div className="slip-value">
+        <span>Consignment value</span>
+        <strong>{fmtMoney(totalValue)}</strong>
+      </div>
+
       {unpriced > 0 && <p className="slip-small">* {unpriced} item(s) had no price when dispatched and are not included in the total.</p>}
-      {t.note && <p><strong>Note:</strong> {t.note}</p>}
-      {t.receive_remark && <p><strong>Receiver remark:</strong> {t.receive_remark}</p>}
-      {t.closed_reason && <p><strong>{t.status === 'rejected' ? 'Rejection' : 'Cancellation'} reason:</strong> {t.closed_reason}</p>}
+      {t.note && <p className="slip-remark"><strong>Note:</strong> {t.note}</p>}
+      {t.receive_remark && <p className="slip-remark"><strong>Receiver remark:</strong> {t.receive_remark}</p>}
+      {t.closed_reason && <p className="slip-remark"><strong>{t.status === 'rejected' ? 'Rejection' : 'Cancellation'} reason:</strong> {t.closed_reason}</p>}
 
       <section className="slip-signs">
         <div>
-          <div className="sign-line" />
-          Dispatched by{t.dispatched_by_name ? `: ${t.dispatched_by_name}` : ''}
+          <h2>Dispatched by</h2>
+          <div>{t.dispatched_by_name ?? ''}</div>
         </div>
         <div>
-          <div className="sign-line" />
-          Carried by
+          <h2>Carried by</h2>
+          <div className="slip-placeholder">Name &amp; signature</div>
         </div>
         <div>
-          <div className="sign-line" />
-          Received by{t.received_by_name ? `: ${t.received_by_name}` : ''}
+          <h2>Received by</h2>
+          <div>{t.received_by_name ?? ''}</div>
         </div>
       </section>
       {/* An image rather than a CSS background, which browsers leave out when printing. */}

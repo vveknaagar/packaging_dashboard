@@ -40,6 +40,19 @@ export function LocationForm({ location }: { location?: LocationRow }) {
             <span>Address{isStore ? '' : ' (optional)'}</span>
             <textarea name="address" rows={2} required={isStore} maxLength={300} defaultValue={location?.address} />
           </label>
+          <label className="field">
+            <span>City{isStore ? '' : ' (optional)'}</span>
+            <input name="city" type="text" required={isStore} maxLength={60} defaultValue={location?.city} placeholder="e.g. Dwarka" />
+          </label>
+          <label className="field">
+            <span>State{isStore ? '' : ' (optional)'}</span>
+            <input name="state" type="text" required={isStore} maxLength={60} defaultValue={location?.state} placeholder="e.g. Delhi" />
+          </label>
+          <label className="field">
+            <span>PIN code{isStore ? '' : ' (optional)'}</span>
+            <input name="pincode" type="text" required={isStore} inputMode="numeric" maxLength={6} minLength={6} pattern="[0-9]{6}" defaultValue={location?.pincode} placeholder="110075" title="6-digit PIN code" />
+            <span className="hint">City, state and PIN code are printed on delivery challans sent to this store.</span>
+          </label>
         </div>
         <p className="hint">
           Contact person and phone are filled in automatically from the {location?.type === 'warehouse' ? 'Warehouse Admin' : 'Store Admin'}&apos;s details.

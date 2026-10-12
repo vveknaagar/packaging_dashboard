@@ -103,8 +103,8 @@ before(async () => {
   // A fake hash keeps the tests fast; password hashing is covered separately.
   superAdmin = await loadUser(await users.insertUser('Root', 'root', 'x', 'super_admin', null));
   whAdmin = await loadUser(await users.insertUser('Wanda', 'wanda', 'x', 'warehouse_admin', await db.warehouseId()));
-  const storeAId = await locations.createStore(superAdmin, { name: 'Store A', code: 'STA', address: 'Ring Road', gstin: '24ABCDE1234F1Z5' }, null);
-  const storeBId = await locations.createStore(superAdmin, { name: 'Store B', code: 'STB', address: 'Ring Road', gstin: '24ABCDE1234F1Z5' }, null);
+  const storeAId = await locations.createStore(superAdmin, { name: 'Store A', code: 'STA', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null);
+  const storeBId = await locations.createStore(superAdmin, { name: 'Store B', code: 'STB', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null);
   storeA = await loadUser(await users.insertUser('Asha', 'asha', 'x', 'store_admin', storeAId));
   storeB = await loadUser(await users.insertUser('Bela', 'bela', 'x', 'store_admin', storeBId));
 
@@ -128,16 +128,18 @@ describe('locations', () => {
   });
 
   test('only the Super Admin can add stores, and codes are unique', async () => {
-    await assert.rejects(locations.createStore(whAdmin, { name: 'X', code: 'X1', address: 'Ring Road', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/Only the Super Admin/));
-    await assert.rejects(locations.createStore(superAdmin, { name: 'Dup', code: 'sta', address: 'Ring Road', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/already used/));
+    await assert.rejects(locations.createStore(whAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/Only the Super Admin/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'Dup', code: 'sta', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/already used/));
   });
 
   test('a store needs an address and a valid GSTIN', async () => {
-    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: '', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/Address is required/));
-    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', gstin: '' }, null), isAppError(/GSTIN is required/));
-    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', gstin: 'NOT-A-GSTIN' }, null), isAppError(/15 characters/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: '', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/Address is required/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '' }, null), isAppError(/GSTIN is required/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: '', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/City is required/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '3950', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/6 digits/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: 'NOT-A-GSTIN' }, null), isAppError(/15 characters/));
     // Lower case and spaces are tidied up.
-    const id = await locations.createStore(superAdmin, { name: 'Surat', code: 'su', address: 'Ring Road', gstin: '24abcde1234f1z5 ' }, null);
+    const id = await locations.createStore(superAdmin, { name: 'Surat', code: 'su', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24abcde1234f1z5 ' }, null);
     assert.deepEqual(await db.get('SELECT code, gstin FROM locations WHERE id = ?', id), { code: 'SU', gstin: '24ABCDE1234F1Z5' });
   });
 
@@ -151,7 +153,7 @@ describe('locations', () => {
 
 describe('location contact', () => {
   test('a location has no contact fields of its own: its contact is its admin', async () => {
-    const id = await locations.createStore(superAdmin, { name: 'Store C', code: 'STC', address: 'Ring Road', gstin: '24ABCDE1234F1Z5' },
+    const id = await locations.createStore(superAdmin, { name: 'Store C', code: 'STC', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' },
       { name: 'chetan', username: 'chetan', phone: '98765 43210', password: 'pw' });
     assert.deepEqual((await locations.allContacts()).get(id), [{ name: 'Chetan', phone: '98765 43210' }]);
     // A second admin is listed too, and editing a user's phone changes the location's contact.

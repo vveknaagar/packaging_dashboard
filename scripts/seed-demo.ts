@@ -81,9 +81,9 @@ async function main() {
 
   const storeIds: number[] = [];
   for (const s of [
-    { name: 'Varachha Store', code: 'VAR', address: 'Varachha Road, Surat', gstin: '24AAACD1234E1Z1' },
-    { name: 'Adajan Store', code: 'ADJ', address: 'Adajan, Surat', gstin: '24AAACD1234E2Z0' },
-    { name: 'Vesu Store', code: 'VES', address: 'Vesu, Surat', gstin: '24AAACD1234E3Z9' },
+    { name: 'Varachha Store', code: 'VAR', address: 'Varachha Road, Surat', city: 'Surat', state: 'Gujarat', pincode: '395006', gstin: '24AAACD1234E1Z1' },
+    { name: 'Adajan Store', code: 'ADJ', address: 'Adajan, Surat', city: 'Surat', state: 'Gujarat', pincode: '395009', gstin: '24AAACD1234E2Z0' },
+    { name: 'Vesu Store', code: 'VES', address: 'Vesu, Surat', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24AAACD1234E3Z9' },
   ]) storeIds.push(await locations.createStore(admin, s, null));
   const store1 = await add('Demo Store Admin (Varachha)', 'store1', 'store_admin', storeIds[0], '0261 000 0001');
   const store2 = await add('Demo Store Admin (Adajan)', 'store2', 'store_admin', storeIds[1], '0261 000 0002');

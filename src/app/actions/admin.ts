@@ -11,7 +11,7 @@ import { field, parseId, rawField, requireId } from '@/lib/util';
 
 /* ---------- locations ---------- */
 
-const LOCATION_FIELDS = { name: 'Name', code: 'Code', address: 'Address', gstin: 'GSTIN' };
+const LOCATION_FIELDS = { name: 'Name', code: 'Code', address: 'Address', city: 'City', state: 'State', pincode: 'PIN code', gstin: 'GSTIN' };
 const locationRow = (id: number) => get<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
 
 export async function saveLocationAction(formData: FormData): Promise<ActionResult> {
@@ -20,6 +20,9 @@ export async function saveLocationAction(formData: FormData): Promise<ActionResu
       name: rawField(formData, 'name'),
       code: rawField(formData, 'code'),
       address: rawField(formData, 'address'),
+      city: rawField(formData, 'city'),
+      state: rawField(formData, 'state'),
+      pincode: rawField(formData, 'pincode'),
       gstin: rawField(formData, 'gstin'),
     };
     const id = parseId(rawField(formData, 'id'));
@@ -39,7 +42,7 @@ export async function saveLocationAction(formData: FormData): Promise<ActionResu
     } : null);
     const store = (await locationRow(storeId))!;
     await audit(user, 'location_created', `${store.name} (${store.code})`,
-      [store.address, store.gstin && `GSTIN ${store.gstin}`, wantsAdmin && `Store Admin: ${field(formData, 'admin_username')}`].filter(Boolean).join(' · '));
+      [store.address, [store.city, store.state, store.pincode].filter(Boolean).join(', '), store.gstin && `GSTIN ${store.gstin}`, wantsAdmin && `Store Admin: ${field(formData, 'admin_username')}`].filter(Boolean).join(' · '));
     return {
       ok: wantsAdmin ? 'Store and its Store Admin created.' : 'Store created. Assign a Store Admin from the Users screen.',
       redirectTo: '/locations',
