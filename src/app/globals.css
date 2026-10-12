@@ -556,8 +556,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .slip-code { font-family: var(--mono); font-size: 0.86em; }
 
 .slip-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 16px; border-bottom: 3px solid var(--ink); padding-bottom: 16px; margin-bottom: 22px; }
-.slip-logo { display: block; height: 30px; width: auto; margin-bottom: 8px; }
-.slip-app { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.14em; }
+.slip-logo { display: block; height: 30px; width: auto; margin-bottom: 10px; }
 .slip-head h1 { font-size: 2.1rem; line-height: 1.15; margin: 6px 0 0; }
 .slip-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
 .slip-meta-row { display: flex; gap: 22px; text-align: right; }
