@@ -604,6 +604,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .slip-value strong { font-size: 1.5rem; }
 .slip-small { font-size: 0.8rem; color: var(--ink-2); }
 .slip-remark { margin: 0 0 6px; }
+.slip-declaration { margin: 8px 0 18px; line-height: 1.55; break-inside: avoid; }
+.slip-declaration h3 { font-size: 0.95rem; font-weight: 800; margin: 0 0 6px; }
+.slip-declaration ol { margin: 0 0 10px; padding-left: 22px; }
+.slip-declaration li { margin-bottom: 3px; }
+.slip-declaration p { margin: 0; }
 
 .slip-signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 80px; }
 .slip-signs > div { border-top: 2px solid var(--ink); padding-top: 8px; }
