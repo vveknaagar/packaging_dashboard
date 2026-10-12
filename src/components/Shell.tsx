@@ -24,6 +24,8 @@ interface Props {
   unread: number;
   /** Incoming transfers waiting for this user's location to approve. */
   pending: number;
+  /** Transfers from stores waiting for this Warehouse Admin (or Super Admin) to approve. */
+  toApprove?: number;
   /** Only for a Super Admin: the users they can switch to, and their own name while they act as someone else. */
   switcher?: { users: { id: number; label: string }[]; currentId: number; ownerName: string | null };
   /** The guided tour of this user's menu; it opens by itself on their first visit. */
@@ -41,7 +43,7 @@ function activeHref(nav: NavItem[], pathname: string): string {
   return best;
 }
 
-export function Shell({ nav, userName, roleLabel, locationName, unread, pending, switcher, tour, children }: Props) {
+export function Shell({ nav, userName, roleLabel, locationName, unread, pending, toApprove = 0, switcher, tour, children }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const active = activeHref(nav, pathname);
@@ -105,6 +107,11 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
           </button>
           <div className="topbar-title">{locationName ?? 'All locations'}</div>
           <ThemeToggle />
+          {toApprove > 0 && (
+            <Link href="/transfers?view=all&status=awaiting_approval" className="pending-pill">
+              {toApprove} to approve
+            </Link>
+          )}
           {pending > 0 && (
             <Link href="/transfers?view=incoming&status=dispatched" className="pending-pill">
               {pending} pending approval

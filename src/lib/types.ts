@@ -1,6 +1,6 @@
 export type Role = 'super_admin' | 'warehouse_admin' | 'store_admin';
 export type LocationType = 'warehouse' | 'store';
-export type TransferStatus = 'draft' | 'dispatched' | 'completed' | 'discrepancy' | 'rejected' | 'cancelled';
+export type TransferStatus = 'draft' | 'awaiting_approval' | 'approved' | 'declined' | 'dispatched' | 'completed' | 'discrepancy' | 'rejected' | 'cancelled';
 export type LedgerType = 'stock_in' | 'stock_out' | 'sale' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'transfer_return';
 
 /** The signed-in user, as loaded fresh from the database on every request. */
@@ -70,6 +70,9 @@ export interface TransferRow {
   logistics_partner_id: number | null;
   created_by: number;
   created_at: string;
+  /** The Warehouse Admin (or Super Admin) who approved a transfer sent by a store. */
+  approved_by: number | null;
+  approved_at: string | null;
   dispatched_by: number | null;
   dispatched_at: string | null;
   received_by: number | null;
@@ -86,6 +89,7 @@ export interface TransferRow {
 export interface TransferDetail extends TransferRow {
   source_name: string;
   source_code: string;
+  source_type: string;
   source_address: string;
   source_gstin: string;
   /** Name and phone of the source location's first active admin. */
@@ -93,6 +97,7 @@ export interface TransferDetail extends TransferRow {
   source_phone: string | null;
   dest_name: string;
   dest_code: string;
+  dest_type: string;
   dest_address: string;
   dest_city: string;
   dest_state: string;
@@ -101,6 +106,7 @@ export interface TransferDetail extends TransferRow {
   dest_contact: string | null;
   dest_phone: string | null;
   created_by_name: string;
+  approved_by_name: string | null;
   dispatched_by_name: string | null;
   received_by_name: string | null;
   closed_by_name: string | null;

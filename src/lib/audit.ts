@@ -32,6 +32,9 @@ export const AUDIT_GROUPS: Record<string, Record<string, string>> = {
   },
   Transfers: {
     transfer_draft: 'Transfer draft saved',
+    transfer_submitted: 'Transfer sent for approval',
+    transfer_approved: 'Transfer approved by warehouse',
+    transfer_declined: 'Transfer declined by warehouse',
     transfer_dispatched: 'Transfer dispatched',
     transfer_received: 'Transfer received',
     transfer_discrepancy: 'Transfer received with discrepancy',

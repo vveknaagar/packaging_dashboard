@@ -37,12 +37,14 @@ interface Props {
   initialTransportRef?: string;
   initialPartnerId?: number | null;
   initialQty?: Record<number, number>;
+  /** Sent from a store: the warehouse approves it before it can be dispatched, so it is sent for approval instead. */
+  needsApproval?: boolean;
 }
 
 /** Create a transfer or edit a draft: choose the destination, tick the items to send and type a quantity for each. */
 export function TransferForm({
   sourceName, sources, sourceId, stockLabel = 'Your stock', destinations, partners, items, transferId, initialDestId, initialNote = '',
-  initialTransportMode = '', initialTransportRef = '', initialPartnerId = null, initialQty = {},
+  initialTransportMode = '', initialTransportRef = '', initialPartnerId = null, initialQty = {}, needsApproval = false,
 }: Props) {
   const router = useRouter();
   const [qty, setQty] = useState<Record<number, string>>(
@@ -100,9 +102,9 @@ export function TransferForm({
             {sources && <span className="hint">Changing this starts the item list again.</span>}
           </label>
           <label className="field">
-            <span>To (destination store)</span>
+            <span>{needsApproval ? 'To (store or warehouse)' : 'To (destination store)'}</span>
             <select name="dest_id" required defaultValue={initialDestId ?? ''}>
-              <option value="" disabled>Select a store…</option>
+              <option value="" disabled>{needsApproval ? 'Select where to send…' : 'Select a store…'}</option>
               {destinations.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}
             </select>
           </label>
@@ -184,26 +186,42 @@ export function TransferForm({
         )}
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <h2>Parcel photo</h2>
-          <span className="muted">Needed to dispatch. Not needed for a draft.</span>
+      {needsApproval ? (
+        <div className="alert alert-info" role="status">
+          <strong>Needs warehouse approval.</strong> Send it for approval: nothing leaves {sourceName} until the warehouse approves it.
+          You then dispatch it with a photo of the parcel.
         </div>
-        <ParcelPhotoInput onReady={setHasPhoto} />
-      </div>
+      ) : (
+        <div className="card">
+          <div className="card-head">
+            <h2>Parcel photo</h2>
+            <span className="muted">Needed to dispatch. Not needed for a draft.</span>
+          </div>
+          <ParcelPhotoInput onReady={setHasPhoto} />
+        </div>
+      )}
 
       <div className="sticky-bar">
         <div><strong>{chosen.length}</strong> item(s), <strong>{units}</strong> unit(s)</div>
         <div className="form-actions">
           <Link href={transferId ? `/transfers/${transferId}` : '/transfers'} className="btn btn-ghost">Cancel</Link>
           <SubmitButton className="btn" name="intent" value="draft" disabled={!canSend}>Save draft</SubmitButton>
-          <SubmitButton
-            name="intent" value="dispatch" disabled={!canSend || !hasPhoto} pendingLabel="Working…"
-            title={hasPhoto ? undefined : 'Add a photo of the parcel to dispatch'}
-            data-confirm={`Dispatch now? ${units} unit(s) will be deducted from ${sourceName} and shown as in transit.`}
-          >
-            Dispatch
-          </SubmitButton>
+          {needsApproval ? (
+            <SubmitButton
+              name="intent" value="approval" disabled={!canSend} pendingLabel="Sending…"
+              data-confirm={`Send for warehouse approval? ${units} unit(s) stay in ${sourceName} until it is approved and dispatched.`}
+            >
+              Send for approval
+            </SubmitButton>
+          ) : (
+            <SubmitButton
+              name="intent" value="dispatch" disabled={!canSend || !hasPhoto} pendingLabel="Working…"
+              title={hasPhoto ? undefined : 'Add a photo of the parcel to dispatch'}
+              data-confirm={`Dispatch now? ${units} unit(s) will be deducted from ${sourceName} and shown as in transit.`}
+            >
+              Dispatch
+            </SubmitButton>
+          )}
         </div>
       </div>
     </ActionForm>

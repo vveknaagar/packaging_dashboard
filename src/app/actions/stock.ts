@@ -90,10 +90,15 @@ async function parcelPhotoFrom(formData: FormData): Promise<Buffer | null> {
   return Buffer.from(await file.arrayBuffer());
 }
 
-/** Create a transfer or update a draft. The button pressed decides whether it is dispatched too. */
+/**
+ * Create a transfer or update a draft. The button pressed decides whether it is also
+ * dispatched (from the warehouse) or sent for the warehouse's approval (from a store).
+ */
 export async function saveTransferAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
-    const dispatchNow = field(formData, 'intent') === 'dispatch';
+    const intent = field(formData, 'intent');
+    const dispatchNow = intent === 'dispatch';
+    const submitForApproval = intent === 'approval';
     const input = {
       user,
       sourceId: parseId(rawField(formData, 'source_id')),
@@ -104,16 +109,50 @@ export async function saveTransferAction(formData: FormData): Promise<ActionResu
       transportRef: rawField(formData, 'transport_ref'),
       partnerId: rawField(formData, 'logistics_partner_id'),
       dispatchNow,
+      submitForApproval,
       parcelPhoto: dispatchNow ? await parcelPhotoFrom(formData) : null,
     };
     const existingId = parseId(rawField(formData, 'id'));
     const id = existingId ? await transfers.updateDraft({ ...input, id: existingId }) : await transfers.create(input);
     const info = await transferInfo(id);
-    await audit(user, dispatchNow ? 'transfer_dispatched' : 'transfer_draft', info.number, `${info.route} · ${info.list}`);
+    await audit(user, dispatchNow ? 'transfer_dispatched' : submitForApproval ? 'transfer_submitted' : 'transfer_draft',
+      info.number, `${info.route} · ${info.list}`);
     return {
-      ok: dispatchNow ? 'Transfer dispatched. Stock is now in transit.' : 'Draft saved.',
+      ok: dispatchNow ? 'Transfer dispatched. Stock is now in transit.'
+        : submitForApproval ? 'Sent to the warehouse for approval. Nothing has left your stock yet.' : 'Draft saved.',
       redirectTo: `/transfers/${id}`,
     };
+  });
+}
+
+/** A store sends a saved draft to the warehouse for approval. */
+export async function sendForApprovalAction(formData: FormData): Promise<ActionResult> {
+  return runAction([...STOCK_ROLES], async (user) => {
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    await transfers.sendForApproval({ user, id });
+    const info = await transferInfo(id);
+    await audit(user, 'transfer_submitted', info.number, `${info.route} · ${info.list}`);
+    return { ok: 'Sent to the warehouse for approval. Nothing has left your stock yet.' };
+  });
+}
+
+export async function approveTransferAction(formData: FormData): Promise<ActionResult> {
+  return runAction(['super_admin', 'warehouse_admin'], async (user) => {
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    await transfers.approve({ user, id });
+    const info = await transferInfo(id);
+    await audit(user, 'transfer_approved', info.number, `${info.route} · ${info.list}`);
+    return { ok: 'Transfer approved. The store can now dispatch it.' };
+  });
+}
+
+export async function declineTransferAction(formData: FormData): Promise<ActionResult> {
+  return runAction(['super_admin', 'warehouse_admin'], async (user) => {
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    await transfers.decline({ user, id, reason: rawField(formData, 'reason') });
+    const info = await transferInfo(id);
+    await audit(user, 'transfer_declined', info.number, `${info.route}. Reason: ${field(formData, 'reason')}`);
+    return { ok: 'Transfer declined. The store has been told why.' };
   });
 }
 

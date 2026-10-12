@@ -33,7 +33,7 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
   const user = await requireUser();
   const id = parseId((await params).id);
   const t = id ? await getTransfer(id) : undefined;
-  if (!t || !canViewTransfer(user, t) || t.status === 'draft') notFound();
+  if (!t || !canViewTransfer(user, t) || !t.dispatched_at) notFound();
 
   const lines = await getLines(t.id);
   const received = t.status === 'completed' || t.status === 'discrepancy';

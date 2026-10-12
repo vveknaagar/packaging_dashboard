@@ -104,7 +104,21 @@ const ALL: Record<string, GuideSection> = {
       'Take a photo of the packed parcel and add it under Parcel photo. On a phone, this opens the camera.',
       'Click Dispatch. The stock is taken out of your location and shows as in transit. Or click Save draft to finish later.',
     ],
-    tips: ['Until the other side approves it, you can still cancel a dispatched transfer and the stock comes back to you.'],
+    tips: [
+      'From a store, click Send for approval instead of Dispatch. A Warehouse Admin approves it first; then open the transfer, add the parcel photo and click Dispatch. Nothing leaves your store before that.',
+      'A store can send stock to another store or back to the warehouse.',
+      'Until the other side approves it, you can still cancel a dispatched transfer and the stock comes back to you.',
+    ],
+  },
+  approveTransfers: {
+    id: 'approve-transfers', title: 'Approve transfers from stores',
+    summary: 'Every transfer a store sends must be approved by the warehouse before it is dispatched.',
+    steps: [
+      'When a store sends a transfer for approval, "to approve" appears at the top and on the Dashboard.',
+      'Open the transfer and check where it is going and what is in it.',
+      'Click Approve. The store can then pack it and dispatch it with a parcel photo.',
+      'Or click Decline and give a reason. The transfer closes and no stock moves.',
+    ],
   },
   receive: {
     id: 'receive', title: 'Receive stock (approve a transfer)',
@@ -199,9 +213,9 @@ const ALL: Record<string, GuideSection> = {
 };
 
 const ORDER: Record<Role, string[]> = {
-  super_admin: ['dashboard', 'itemsAdmin', 'stock', 'matrix', 'ledger', 'pricing', 'transfers', 'newTransfer', 'receive',
+  super_admin: ['dashboard', 'itemsAdmin', 'stock', 'matrix', 'ledger', 'pricing', 'transfers', 'newTransfer', 'approveTransfers', 'receive',
     'notifications', 'locationsAdmin', 'users', 'logistics', 'switchUser', 'audit', 'account', 'guide'],
-  warehouse_admin: ['dashboard', 'stock', 'matrix', 'ledger', 'items', 'transfers', 'newTransfer', 'receive',
+  warehouse_admin: ['dashboard', 'stock', 'matrix', 'ledger', 'items', 'transfers', 'newTransfer', 'approveTransfers', 'receive',
     'notifications', 'locations', 'account', 'guide'],
   store_admin: ['dashboard', 'stock', 'ledger', 'items', 'transfers', 'newTransfer', 'receive', 'notifications', 'account', 'guide'],
 };

@@ -33,8 +33,14 @@ export function canViewTransfer(user: Who, t: TransferRoute): boolean {
   if (isSuper(user) || isWarehouse(user)) return true;
   if (user.location_id === t.source_id) return true;
   // The destination only learns about a transfer once it has been dispatched.
-  return user.location_id === t.dest_id && t.status !== 'draft';
+  return user.location_id === t.dest_id && !BEFORE_DISPATCH.has(t.status);
 }
+
+/** A transfer in one of these has not left its source: the destination does not see it yet. */
+const BEFORE_DISPATCH = new Set<TransferStatus>(['draft', 'awaiting_approval', 'approved', 'declined']);
+
+/** A Warehouse Admin approves the transfers stores send, before they are dispatched. So may the Super Admin. */
+export const canApproveTransfers = (user: Who) => isSuper(user) || isWarehouse(user);
 
 /** Only the Super Admin can use the app as another user. It stays possible while they are doing so. */
 export const canSwitchUsers = (u: Actor) => !!u.switched_from || u.role === 'super_admin';

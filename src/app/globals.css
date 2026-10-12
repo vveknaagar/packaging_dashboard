@@ -389,6 +389,9 @@ a.row-link:hover { background: var(--hover-soft); text-decoration: none; }
 
 .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; background: var(--neutral); color: var(--ink-2); }
 .badge-dispatched { background: var(--accent-soft); color: var(--info-ink); }
+.badge-awaiting_approval { background: var(--warn-soft); color: var(--warn); }
+.badge-approved { background: var(--good-soft); color: var(--good); }
+.badge-declined { background: var(--crit-soft); color: var(--crit-ink); }
 .badge-completed, .badge-ok { background: var(--good-soft); color: var(--good); }
 .badge-discrepancy { background: var(--warn-soft); color: var(--warn); }
 .badge-rejected { background: var(--crit-soft); color: var(--crit-ink); }

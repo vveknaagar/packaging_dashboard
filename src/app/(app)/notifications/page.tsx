@@ -4,7 +4,7 @@ import { markNotificationsReadAction } from '@/app/actions/admin';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { Empty, PageHead, StatusBadge } from '@/components/ui';
 import { all } from '@/lib/db';
-import { pendingApprovals } from '@/lib/services/transfers';
+import { pendingApprovals, transfersToApprove } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
 import { fmtDateTime, fmtNum } from '@/lib/util';
 
@@ -22,7 +22,7 @@ interface NotificationRow {
 
 export default async function NotificationsPage() {
   const user = await requireUser();
-  const pending = await pendingApprovals(user);
+  const [pending, toApprove] = await Promise.all([pendingApprovals(user), transfersToApprove(user)]);
   const rows = await all<NotificationRow>(
     `SELECT n.id, n.ts, n.message, n.transfer_id, n.read_at,
             (t.status = 'dispatched' AND t.dest_id = ?) AS awaiting
@@ -30,6 +30,7 @@ export default async function NotificationsPage() {
      WHERE n.user_id = ? ORDER BY n.id DESC LIMIT 100`, user.location_id ?? -1, user.id);
   const unread = rows.filter((r) => !r.read_at).length;
   const sub = [
+    toApprove.length ? `${toApprove.length} to approve` : '',
     pending.length ? `${pending.length} pending approval` : '',
     unread ? `${unread} unread` : '',
   ].filter(Boolean).join(' · ') || 'You are up to date.';
@@ -43,6 +44,29 @@ export default async function NotificationsPage() {
           </ActionForm>
         )}
       </PageHead>
+
+      {toApprove.length > 0 && (
+        <section className="card card-pending">
+          <div className="card-head">
+            <h2>Transfers to approve</h2>
+            <span className="muted">Sent by stores. Nothing is dispatched until you approve</span>
+          </div>
+          <ul className="row-list">
+            {toApprove.map((t) => (
+              <li key={t.id}>
+                <Link href={`/transfers/${t.id}`} className="row-link">
+                  <div>
+                    <div className="row-title">{t.number} <StatusBadge status="awaiting_approval" /></div>
+                    <div className="muted">{t.source_name} → {t.dest_name} · {t.line_count} item(s), {fmtNum(t.units)} unit(s)</div>
+                    {t.submitted_at && <div className="muted">Sent for approval {fmtDateTime(t.submitted_at)}</div>}
+                  </div>
+                  <span className="btn btn-primary btn-sm">Review</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {pending.length > 0 && (
         <section className="card card-pending">

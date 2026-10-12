@@ -2,7 +2,7 @@ import { Shell, type NavItem } from '@/components/Shell';
 import { all, get } from '@/lib/db';
 import { tourFor } from '@/lib/guide';
 import { canSwitchUsers, ROLE_LABELS } from '@/lib/permissions';
-import { pendingApprovals } from '@/lib/services/transfers';
+import { pendingApprovals, transfersToApprove } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
 import type { Role } from '@/lib/types';
 
@@ -48,7 +48,7 @@ const NAV: Record<Role, NavItem[]> = {
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   // Independent lookups go to the database together rather than one after another.
-  const [unreadRow, switchable, pending, tourRow] = await Promise.all([
+  const [unreadRow, switchable, pending, toApprove, tourRow] = await Promise.all([
     get<{ n: number }>('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', user.id),
     canSwitchUsers(user) ? all<{ id: number; name: string; role: Role; location_name: string | null }>(
       `SELECT u.id, u.name, u.role, l.name AS location_name
@@ -56,6 +56,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
        WHERE u.active = 1
        ORDER BY CASE u.role WHEN 'super_admin' THEN 0 WHEN 'warehouse_admin' THEN 1 ELSE 2 END, u.name`) : null,
     pendingApprovals(user),
+    transfersToApprove(user),
     get<{ tour_done_at: string | null }>('SELECT tour_done_at FROM users WHERE id = ?', user.id),
   ]);
   const unread = unreadRow!.n;
@@ -70,6 +71,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       locationName={user.location_name}
       unread={unread}
       pending={pending.length}
+      toApprove={toApprove.length}
       tour={{ steps: tourFor(user.role, user.name), autoStart: !tourDone }}
       switcher={switchable ? {
         users: switchable.map((u) => ({ id: u.id, label: `${u.name} · ${u.location_name ?? ROLE_LABELS[u.role]}` })),

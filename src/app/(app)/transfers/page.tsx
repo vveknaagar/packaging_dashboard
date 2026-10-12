@@ -45,7 +45,8 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
 
   const where: string[] = [];
   const params: (string | number)[] = [];
-  if (view === 'incoming') { where.push("t.dest_id = ? AND t.status <> 'draft'"); params.push(home!); }
+  // The destination sees a transfer only once it has been dispatched.
+  if (view === 'incoming') { where.push('t.dest_id = ? AND t.dispatched_at IS NOT NULL'); params.push(home!); }
   if (view === 'outgoing') { where.push('t.source_id = ?'); params.push(home!); }
   if (status) { where.push('t.status = ?'); params.push(status); }
   if (q) {

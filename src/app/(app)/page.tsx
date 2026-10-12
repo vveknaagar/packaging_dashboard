@@ -81,7 +81,7 @@ function TransferList({ transfers, empty, action }: { transfers: TransferSummary
             <div>
               <div className="row-title">{t.number} <StatusBadge status={t.status} /></div>
               <div className="muted">{t.source_name} → {t.dest_name} · {t.line_count} item(s), {fmtNum(t.units)} unit(s)</div>
-              <div className="muted">Dispatched {fmtDateTime(t.dispatched_at)}</div>
+              <div className="muted">{t.dispatched_at ? `Dispatched ${fmtDateTime(t.dispatched_at)}` : 'Not dispatched yet'}</div>
             </div>
             {action && <span className="btn btn-primary btn-sm">{action}</span>}
           </Link>
@@ -165,12 +165,13 @@ function ItemValueCard({ rows, locationName, wide }: { rows: ItemValue[]; locati
 
 async function StoreDashboard({ user }: { user: SessionUser }) {
   const locationId = user.location_id!;
-  const [summaryRow, incoming, outgoing, activity, values] = await Promise.all([
+  const [summaryRow, incoming, outgoing, awaiting, activity, values] = await Promise.all([
     get<{ items_in_stock: number; units: number }>(
       `SELECT COUNT(CASE WHEN qty > 0 THEN 1 END) AS items_in_stock, COALESCE(SUM(qty), 0) AS units
        FROM stock WHERE location_id = ?`, locationId),
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.dest_id = ? ORDER BY t.dispatched_at`, locationId),
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' AND t.source_id = ? ORDER BY t.dispatched_at`, locationId),
+    all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status IN ('awaiting_approval', 'approved') AND t.source_id = ? ORDER BY t.id`, locationId),
     recentActivity(locationId, 8),
     itemValues(locationId),
   ]);
@@ -199,6 +200,12 @@ async function StoreDashboard({ user }: { user: SessionUser }) {
           <div className="card-head"><h2>Outgoing in transit</h2><Link href="/transfers?view=outgoing">View all</Link></div>
           <TransferList transfers={outgoing} empty="Nothing you sent is in transit." />
         </section>
+        {awaiting.length > 0 && (
+          <section className="card">
+            <div className="card-head"><h2>Warehouse approval</h2><Link href="/transfers?view=outgoing">View all</Link></div>
+            <TransferList transfers={awaiting} empty="" />
+          </section>
+        )}
         <ItemValueCard rows={values} locationName={user.location_name ?? 'your store'} />
         <section className="card">
           <div className="card-head"><h2>Recent activity</h2><Link href="/stock/ledger">Stock ledger</Link></div>
@@ -228,7 +235,7 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
   // Independent lookups go to the database together rather than one after another.
   // The Super Admin sees stock value store by store; a Warehouse Admin, like a Store Admin, only for their own location.
   const storeWise = isSuper(user);
-  const [totals, byLocation, pending, activity, ownValues] = await Promise.all([
+  const [totals, byLocation, pending, toApprove, activity, ownValues] = await Promise.all([
     get<{ items: number; units: number }>(
       'SELECT (SELECT COUNT(*) FROM items WHERE active = 1) AS items, (SELECT COALESCE(SUM(qty), 0) FROM stock) AS units'),
     all<LocationStock>(
@@ -242,6 +249,7 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
        HAVING l.active = 1 OR COALESCE(SUM(s.qty), 0) > 0
        ORDER BY (l.type = 'warehouse') DESC, units DESC, l.name`),
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'dispatched' ORDER BY t.dispatched_at`),
+    all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'awaiting_approval' ORDER BY t.id`),
     recentActivity(null, 8),
     !storeWise && user.location_id ? itemValues(user.location_id) : null,
   ]);
@@ -312,6 +320,10 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
             )}
           </section>
         )}
+        <section className={`card${toApprove.length ? ' card-pending' : ''}${showValue ? ' span-all' : ''}`}>
+          <div className="card-head"><h2>Transfers to approve</h2><Link href="/transfers?view=all&status=awaiting_approval">View all</Link></div>
+          <TransferList transfers={toApprove.slice(0, 6)} empty="No store transfers are waiting for your approval." action="Review" />
+        </section>
         <section className={`card${showValue ? ' span-all' : ''}`}>
           <div className="card-head"><h2>Pending approval</h2><Link href="/transfers?view=all&status=dispatched">View all</Link></div>
           <TransferList transfers={pending.slice(0, 6)} empty="No transfers are waiting for approval." />

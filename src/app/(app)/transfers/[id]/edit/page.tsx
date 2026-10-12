@@ -29,6 +29,7 @@ export default async function EditTransferPage({ params }: { params: Promise<{ i
         partners={await listPartners(true)}
         items={await transferableItems(transfer.source_id)}
         transferId={transfer.id}
+        needsApproval={transfer.source_type === 'store'}
         initialDestId={transfer.dest_id}
         initialNote={transfer.note}
         initialTransportMode={transfer.transport_mode}

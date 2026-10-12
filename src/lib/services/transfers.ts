@@ -1,6 +1,6 @@
 import { all, get, insert, now, run, tx } from '../db';
 import { AppError, ForbiddenError, NotFoundError } from '../errors';
-import { canCreateTransfer, isDestUser, isSourceUser, isStore, isSuper, onBehalfNote } from '../permissions';
+import { canApproveTransfers, canCreateTransfer, isDestUser, isSourceUser, isStore, isSuper, onBehalfNote } from '../permissions';
 import type { LocationRow, SessionUser, TransferDetail, TransferEvent, TransferLine, TransferRow, TransferStatus } from '../types';
 import { TRANSPORT_MODES } from '../transport';
 import { clean, parseQty } from '../util';
@@ -10,6 +10,9 @@ import * as stock from './stock';
 
 export const STATUS_LABELS: Record<TransferStatus, string> = {
   draft: 'Draft',
+  awaiting_approval: 'Awaiting warehouse approval',
+  approved: 'Approved, ready to dispatch',
+  declined: 'Declined by warehouse',
   dispatched: 'Pending approval',
   completed: 'Completed',
   discrepancy: 'Received with Discrepancy',
@@ -20,6 +23,9 @@ export const STATUS_LABELS: Record<TransferStatus, string> = {
 export const EVENT_LABELS: Record<string, string> = {
   created: 'Transfer created',
   updated: 'Draft updated',
+  submitted: 'Sent for warehouse approval',
+  approved: 'Approved by warehouse',
+  declined: 'Declined by warehouse',
   dispatched: 'Dispatched, waiting for approval',
   received: 'Approved, received in full',
   discrepancy: 'Approved with discrepancy',
@@ -61,22 +67,23 @@ export interface RawLine {
 
 export function getTransfer(id: number): Promise<TransferDetail | undefined> {
   return get<TransferDetail>(
-    `SELECT t.*, s.name AS source_name, s.code AS source_code,
+    `SELECT t.*, s.name AS source_name, s.code AS source_code, s.type AS source_type,
             s.address AS source_address, s.gstin AS source_gstin,
             (SELECT u.name FROM users u WHERE u.location_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS source_contact,
             (SELECT u.phone FROM users u WHERE u.location_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS source_phone,
-            d.name AS dest_name, d.code AS dest_code,
+            d.name AS dest_name, d.code AS dest_code, d.type AS dest_type,
             d.address AS dest_address, d.gstin AS dest_gstin,
             d.city AS dest_city, d.state AS dest_state, d.pincode AS dest_pincode,
             (SELECT u.name FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_contact,
             (SELECT u.phone FROM users u WHERE u.location_id = d.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS dest_phone,
-            cu.name AS created_by_name, du.name AS dispatched_by_name,
+            cu.name AS created_by_name, au.name AS approved_by_name, du.name AS dispatched_by_name,
             ru.name AS received_by_name, xu.name AS closed_by_name,
             lp.name AS partner_name, lp.phone AS partner_phone
      FROM transfers t
      JOIN locations s ON s.id = t.source_id
      JOIN locations d ON d.id = t.dest_id
      JOIN users cu ON cu.id = t.created_by
+     LEFT JOIN users au ON au.id = t.approved_by
      LEFT JOIN users du ON du.id = t.dispatched_by
      LEFT JOIN users ru ON ru.id = t.received_by
      LEFT JOIN users xu ON xu.id = t.closed_by
@@ -148,6 +155,29 @@ export async function pendingApprovals(user: SessionUser): Promise<PendingApprov
      ORDER BY t.dispatched_at, t.id`, user.location_id);
 }
 
+export interface ToApprove {
+  id: number;
+  number: string;
+  submitted_at: string;
+  source_name: string;
+  dest_name: string;
+  line_count: number;
+  units: number;
+}
+
+/** Transfers stores have sent for warehouse approval, oldest first. Only for those who may approve them. */
+export async function transfersToApprove(user: SessionUser): Promise<ToApprove[]> {
+  if (!canApproveTransfers(user)) return [];
+  return all<ToApprove>(
+    `SELECT t.id, t.number, s.name AS source_name, d.name AS dest_name,
+            (SELECT MAX(e.ts) FROM transfer_events e WHERE e.transfer_id = t.id AND e.event = 'submitted') AS submitted_at,
+            (SELECT COUNT(*) FROM transfer_items ti WHERE ti.transfer_id = t.id) AS line_count,
+            (SELECT COALESCE(SUM(qty_sent), 0) FROM transfer_items ti WHERE ti.transfer_id = t.id) AS units
+     FROM transfers t JOIN locations s ON s.id = t.source_id JOIN locations d ON d.id = t.dest_id
+     WHERE t.status = 'awaiting_approval'
+     ORDER BY t.id`);
+}
+
 export function getEvents(transferId: number): Promise<TransferEvent[]> {
   return all<TransferEvent>(
     `SELECT e.*, u.name AS user_name
@@ -206,7 +236,8 @@ async function checkRoute(user: SessionUser, sourceId: number | null, destId: nu
   if (!source) throw new AppError('Choose the location to send from.');
   if (!source.active) throw new AppError(`${source.name} is inactive and cannot send transfers.`);
   const dest = await get<LocationRow>('SELECT * FROM locations WHERE id = ?', destId);
-  if (!dest || dest.type !== 'store') throw new AppError('Choose a destination store.');
+  // The warehouse sends to stores; a store sends to another store or back to the warehouse.
+  if (!dest || (dest.type !== 'store' && source.type !== 'store')) throw new AppError('Choose a destination store.');
   if (!dest.active) throw new AppError(`${dest.name} is inactive and cannot receive transfers.`);
   if (dest.id === source.id) throw new AppError('Source and destination must be different.');
   return { source, dest };
@@ -274,15 +305,45 @@ interface SaveInput {
   /** Id of the logistic partner from the Super Admin's list. Optional. */
   partnerId?: unknown;
   dispatchNow: boolean;
+  /** A store's transfer: send it to the warehouse for approval once saved. */
+  submitForApproval?: boolean;
   /** The uploaded photo of the packed parcel. Required when dispatching. */
   parcelPhoto?: Buffer | null;
 }
 
-/** Create a transfer from the user's own location (the Super Admin names one). Optionally dispatch it straight away. */
-export async function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, partnerId, dispatchNow, parcelPhoto }: SaveInput): Promise<number> {
+/** A transfer sent by a store must be approved by the warehouse before it is dispatched. */
+export const needsApproval = (source: Pick<LocationRow, 'type'>) => source.type === 'store';
+
+/** What the sender asked for must suit where it is sent from. */
+function checkIntent(source: LocationRow, dispatchNow: boolean, submitForApproval: boolean) {
+  if (needsApproval(source) && dispatchNow) {
+    throw new AppError('A transfer from a store must be approved by the warehouse before it is dispatched. Send it for approval.');
+  }
+  if (!needsApproval(source) && submitForApproval) throw new AppError('Transfers from the warehouse do not need approval. Dispatch it.');
+}
+
+/** Send a store's draft to the warehouse for approval. Nothing moves yet, but the stock must still be there. */
+async function submitInTx(transfer: TransferRow, user: SessionUser) {
+  const lines = await getLines(transfer.id);
+  if (!lines.length) throw new AppError('This transfer has no items.');
+  for (const line of lines) {
+    const available = await stock.getQty(line.item_id, transfer.source_id);
+    if (line.qty_sent > available) throw new AppError(`${line.name} (${line.size}): only ${available} available, cannot send ${line.qty_sent}.`);
+  }
+  await run("UPDATE transfers SET status = 'awaiting_approval' WHERE id = ?", transfer.id);
+  const units = lines.reduce((n, l) => n + l.qty_sent, 0);
+  await addEvent(transfer.id, user, 'submitted', `${lines.length} item(s), ${units} unit(s). No stock has moved yet.`);
+  await notify(await warehouseAdmins(),
+    `${transfer.number} from ${await locationName(transfer.source_id)} to ${await locationName(transfer.dest_id)} is waiting for your approval.`,
+    transfer.id, user.id);
+}
+
+/** Create a transfer from the user's own location (the Super Admin names one). Optionally dispatch it, or send it for approval, straight away. */
+export async function create({ user, sourceId, destId, rawLines, note, transportMode, transportRef, partnerId, dispatchNow, submitForApproval = false, parcelPhoto }: SaveInput): Promise<number> {
   const photo = dispatchNow ? await parcelPhotoFor(parcelPhoto) : null;
   return tx(async () => {
     const { source, dest } = await checkRoute(user, isSuper(user) ? sourceId ?? null : user.location_id, destId);
+    checkIntent(source, dispatchNow, submitForApproval);
     const lines = await normaliseLines(source.id, rawLines);
     const transport = cleanTransport(transportMode, transportRef);
     const partner = await partnerForTransfer(partnerId);
@@ -295,18 +356,20 @@ export async function create({ user, sourceId, destId, rawLines, note, transport
     }
     await addEvent(id, user, 'created', `${source.name} to ${dest.name}`);
     if (photo) await dispatchInTx(await loadForAction(id), user, photo);
+    if (submitForApproval) await submitInTx(await loadForAction(id), user);
     return id;
   });
 }
 
 /** Replace the destination, note and lines of a draft. */
-export async function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, partnerId, dispatchNow, parcelPhoto }: SaveInput & { id: number }): Promise<number> {
+export async function updateDraft({ user, id, destId, rawLines, note, transportMode, transportRef, partnerId, dispatchNow, submitForApproval = false, parcelPhoto }: SaveInput & { id: number }): Promise<number> {
   const photo = dispatchNow ? await parcelPhotoFor(parcelPhoto) : null;
   return tx(async () => {
     const transfer = await loadForAction(id);
     if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can edit this transfer.');
     if (transfer.status !== 'draft') throw new AppError('Only a draft can be edited.');
-    const { dest } = await checkRoute(user, transfer.source_id, destId);
+    const { source, dest } = await checkRoute(user, transfer.source_id, destId);
+    checkIntent(source, dispatchNow, submitForApproval);
     const lines = await normaliseLines(transfer.source_id, rawLines);
     const transport = cleanTransport(transportMode, transportRef);
     const partner = await partnerForTransfer(partnerId);
@@ -318,7 +381,50 @@ export async function updateDraft({ user, id, destId, rawLines, note, transportM
     }
     await addEvent(id, user, 'updated');
     if (photo) await dispatchInTx(await loadForAction(id), user, photo);
+    if (submitForApproval) await submitInTx(await loadForAction(id), user);
     return id;
+  });
+}
+
+/** Send a saved draft from a store to the warehouse for approval. */
+export async function sendForApproval({ user, id }: { user: SessionUser; id: number }): Promise<void> {
+  await tx(async () => {
+    const transfer = await loadForAction(id);
+    if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can send this transfer for approval.');
+    if (transfer.status !== 'draft') throw new AppError('Only a draft can be sent for approval.');
+    const source = (await get<LocationRow>('SELECT * FROM locations WHERE id = ?', transfer.source_id))!;
+    checkIntent(source, false, true);
+    await submitInTx(transfer, user);
+  });
+}
+
+/** The warehouse approves a store's transfer. The store can then dispatch it. */
+export async function approve({ user, id }: { user: SessionUser; id: number }): Promise<void> {
+  await tx(async () => {
+    if (!canApproveTransfers(user)) throw new ForbiddenError('Only a Warehouse Admin can approve transfers.');
+    const transfer = await loadForAction(id);
+    if (transfer.status !== 'awaiting_approval') throw new AppError('This transfer is not waiting for approval.');
+    await run("UPDATE transfers SET status = 'approved', approved_by = ?, approved_at = ? WHERE id = ?", user.id, now(), id);
+    await addEvent(id, user, 'approved', 'The store can now dispatch it.');
+    await notify(await usersAt(transfer.source_id),
+      `${transfer.number} to ${await locationName(transfer.dest_id)} was approved by the warehouse. Pack it and dispatch it with a parcel photo.`,
+      id, user.id);
+  });
+}
+
+/** The warehouse declines a store's transfer. Nothing had moved, so the transfer simply closes. */
+export async function decline({ user, id, reason }: { user: SessionUser; id: number; reason: unknown }): Promise<void> {
+  await tx(async () => {
+    if (!canApproveTransfers(user)) throw new ForbiddenError('Only a Warehouse Admin can decline transfers.');
+    const transfer = await loadForAction(id);
+    if (transfer.status !== 'awaiting_approval') throw new AppError('This transfer is not waiting for approval.');
+    const why = clean(reason, 500);
+    if (!why) throw new AppError('A reason is required to decline a transfer.');
+    await run("UPDATE transfers SET status = 'declined', closed_by = ?, closed_at = ?, closed_reason = ? WHERE id = ?",
+      user.id, now(), why, id);
+    await addEvent(id, user, 'declined', `No stock was moved. Reason: ${why}`);
+    await notify(await usersAt(transfer.source_id),
+      `${transfer.number} to ${await locationName(transfer.dest_id)} was declined by the warehouse. Reason: ${why}`, id, user.id);
   });
 }
 
@@ -327,7 +433,15 @@ export async function dispatch({ user, id, parcelPhoto }: { user: SessionUser; i
   await tx(async () => {
     const transfer = await loadForAction(id);
     if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can dispatch this transfer.');
-    if (transfer.status !== 'draft') throw new AppError('This transfer has already been dispatched or closed.');
+    const source = (await get<LocationRow>('SELECT * FROM locations WHERE id = ?', transfer.source_id))!;
+    if (needsApproval(source)) {
+      if (transfer.status === 'draft' || transfer.status === 'awaiting_approval') {
+        throw new AppError('This transfer must be approved by the warehouse before it is dispatched.');
+      }
+      if (transfer.status !== 'approved') throw new AppError('This transfer has already been dispatched or closed.');
+    } else if (transfer.status !== 'draft') {
+      throw new AppError('This transfer has already been dispatched or closed.');
+    }
     await dispatchInTx(transfer, user, photo);
   });
 }
@@ -428,7 +542,8 @@ export async function cancel({ user, id, reason }: { user: SessionUser; id: numb
   await tx(async () => {
     const transfer = await loadForAction(id);
     if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the source location can cancel this transfer.');
-    if (transfer.status !== 'draft' && transfer.status !== 'dispatched') {
+    // Before dispatch nothing has moved, including while it waits for or after the warehouse's approval.
+    if (!['draft', 'awaiting_approval', 'approved', 'dispatched'].includes(transfer.status)) {
       throw new AppError('This transfer can no longer be cancelled.');
     }
     const why = clean(reason, 500);

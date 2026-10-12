@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS transfers (
   number         citext UNIQUE,
   source_id      integer NOT NULL REFERENCES locations(id),
   dest_id        integer NOT NULL REFERENCES locations(id),
-  status         text NOT NULL CHECK (status IN ('draft','dispatched','completed','discrepancy','rejected','cancelled')),
+  status         text NOT NULL CHECK (status IN ('draft','awaiting_approval','approved','declined','dispatched','completed','discrepancy','rejected','cancelled')),
   note           text NOT NULL DEFAULT '',
   transport_mode text NOT NULL DEFAULT '',
   transport_ref  text NOT NULL DEFAULT '',
@@ -109,6 +109,13 @@ CREATE TABLE IF NOT EXISTS transfers (
   closed_reason  text NOT NULL DEFAULT '',
   CHECK (source_id <> dest_id)
 );
+-- A transfer sent by a store waits for a Warehouse Admin to approve it before it can be dispatched.
+-- Databases from before this step have the older list of statuses.
+ALTER TABLE transfers DROP CONSTRAINT IF EXISTS transfers_status_check;
+ALTER TABLE transfers ADD CONSTRAINT transfers_status_check
+  CHECK (status IN ('draft','awaiting_approval','approved','declined','dispatched','completed','discrepancy','rejected','cancelled'));
+ALTER TABLE transfers ADD COLUMN IF NOT EXISTS approved_by integer REFERENCES users(id);
+ALTER TABLE transfers ADD COLUMN IF NOT EXISTS approved_at text;
 CREATE INDEX IF NOT EXISTS transfers_source ON transfers(source_id, status);
 CREATE INDEX IF NOT EXISTS transfers_dest ON transfers(dest_id, status);
 -- Courier and transport companies a transfer can be sent with. Only the Super Admin keeps this list.
