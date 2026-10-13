@@ -194,6 +194,7 @@ img { max-width: 100%; }
 }
 /* On the coloured sidebar the badge is a lighter tint of it rather than a second red. */
 .sidebar .brand-mark { background: var(--side-active); }
+.brand-mark img { display: block; width: 22px; height: 22px; }
 
 .nav { flex: 1; padding: 4px 10px 12px; }
 .nav a {

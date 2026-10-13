@@ -56,7 +56,10 @@ export function Shell({ nav, userName, roleLabel, locationName, unread, pending,
     <div className="shell">
       <aside className={`sidebar${open ? ' open' : ''}`}>
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">P</span>
+          <span className="brand-mark" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/monogram-white.png" alt="" width={22} height={22} />
+          </span>
           <span>Mayave<br /><small>Item Transfer</small></span>
         </div>
         <nav className="nav" aria-label="Main">

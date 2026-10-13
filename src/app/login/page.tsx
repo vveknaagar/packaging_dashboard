@@ -16,7 +16,10 @@ export default async function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="brand brand-dark">
-          <span className="brand-mark" aria-hidden="true">P</span>
+          <span className="brand-mark" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/monogram-white.png" alt="" width={22} height={22} />
+          </span>
           <span>Mayave<br /><small>Item Transfer</small></span>
         </div>
         <h1>Sign in</h1>
