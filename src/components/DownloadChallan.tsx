@@ -11,7 +11,7 @@ const PAGE_H = 297;
 const MARGIN = 12;
 
 /** Parts of the challan that should not be cut in two by a page break. */
-const KEEP_WHOLE = '.slip-head, .slip-party, .slip-table thead tr, .slip-table tbody tr, .slip-table tfoot tr, .slip-value, .slip-declaration, .slip-remark, .slip-signs';
+const KEEP_WHOLE = '.slip-head, .slip-party, .slip-table thead tr, .slip-table tbody tr, .slip-table tfoot tr, .slip-value, .slip-closing';
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

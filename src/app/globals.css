@@ -664,7 +664,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   .slip-table-wrap { overflow: visible; }
   /* Keep the dark value box and tinted panels when printed. */
   .slip-value, .slip-status { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .slip-table tr, .slip-signs, .slip-value { break-inside: avoid; }
+  .slip-table tr, .slip-value, .slip-closing { break-inside: avoid; }
   @page { size: A4; margin: 0; }
 }
 

@@ -147,33 +147,36 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
 
       {unpriced > 0 && <p className="slip-small">* {unpriced} item(s) had no price when dispatched and are not included in the total.</p>}
 
-      <section className="slip-declaration">
-        <h3>We Further Declare That</h3>
-        <ol>
-          <li>The above material is being sent solely for product packaging purposes and is not intended for sale, resale, or any commercial transaction.</li>
-          <li>The material is being sent on a sample basis.</li>
-          <li>The value declared above is for transit, insurance, and record purposes only, and there is no commercial invoice value involved.</li>
-          <li>All particulars stated above are true and correct to the best of our knowledge.</li>
-        </ol>
-        <p>
-          We therefore request the concerned authorities, security, and gate personnel to kindly permit the movement and entry of the
-          above-mentioned material. For any clarification, please contact the undersigned.
-        </p>
-      </section>
-      {t.note && <p className="slip-remark"><strong>Note:</strong> {t.note}</p>}
-      {t.receive_remark && <p className="slip-remark"><strong>Receiver remark:</strong> {t.receive_remark}</p>}
-      {t.closed_reason && <p className="slip-remark"><strong>{t.status === 'rejected' ? 'Rejection' : 'Cancellation'} reason:</strong> {t.closed_reason}</p>}
+      {/* Declaration, remarks and signatures stay together on one page. */}
+      <div className="slip-closing">
+        <section className="slip-declaration">
+          <h3>We Further Declare That</h3>
+          <ol>
+            <li>The above material is being sent solely for product packaging purposes and is not intended for sale, resale, or any commercial transaction.</li>
+            <li>The material is being sent on a sample basis.</li>
+            <li>The value declared above is for transit, insurance, and record purposes only, and there is no commercial invoice value involved.</li>
+            <li>All particulars stated above are true and correct to the best of our knowledge.</li>
+          </ol>
+          <p>
+            We therefore request the concerned authorities, security, and gate personnel to kindly permit the movement and entry of the
+            above-mentioned material. For any clarification, please contact the undersigned.
+          </p>
+        </section>
+        {t.note && <p className="slip-remark"><strong>Note:</strong> {t.note}</p>}
+        {t.receive_remark && <p className="slip-remark"><strong>Receiver remark:</strong> {t.receive_remark}</p>}
+        {t.closed_reason && <p className="slip-remark"><strong>{t.status === 'rejected' ? 'Rejection' : 'Cancellation'} reason:</strong> {t.closed_reason}</p>}
 
-      <section className="slip-signs">
-        <div>
-          <h2>Dispatched by</h2>
-          <div>{t.dispatched_by_name ?? ''}</div>
-        </div>
-        <div>
-          <h2>Received by</h2>
-          <div>{t.received_by_name ?? ''}</div>
-        </div>
-      </section>
+        <section className="slip-signs">
+          <div>
+            <h2>Dispatched by</h2>
+            <div>{t.dispatched_by_name ?? ''}</div>
+          </div>
+          <div>
+            <h2>Received by</h2>
+            <div>{t.received_by_name ?? ''}</div>
+          </div>
+        </section>
+      </div>
       {/* An image rather than a CSS background, which browsers leave out when printing. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="slip-watermark" src="/slip-watermark.png" alt="" aria-hidden="true" />
