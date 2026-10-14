@@ -49,11 +49,13 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
   const totalUnit = units.size === 1 ? [...units][0] : '';
   const challanDate = fmtDate(t.dispatched_at) || '—';
 
+  // The sender is named as the company; the receiver as its place.
   const party = (role: string, name: string, code: string, address: string, gstin: string, contact: string | null, phone: string | null) => (
     <div className="slip-party">
       <h2>{role}</h2>
-      <div className="slip-party-name"><strong>{placeName(name)}</strong> <span className="slip-code">{code}</span></div>
-      <div>{COMPANY}</div>
+      {role === 'From'
+        ? <div className="slip-party-name"><strong>{COMPANY}</strong></div>
+        : <div className="slip-party-name"><strong>{placeName(name)}</strong> <span className="slip-code">{code}</span></div>}
       <div className="slip-address">{address || '—'}</div>
       {gstin && <div className="slip-code slip-gstin">GSTIN {gstin}</div>}
       {(contact || phone) && <div className="slip-contact">{[contact, phone].filter(Boolean).join(' · ')}</div>}
