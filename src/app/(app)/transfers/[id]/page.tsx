@@ -5,6 +5,7 @@ import {
   approveTransferAction, cancelTransferAction, declineTransferAction, dispatchTransferAction, rejectTransferAction, sendForApprovalAction,
 } from '@/app/actions/stock';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
+import { ChallanButtons } from '@/components/ChallanButtons';
 import { ReasonDialogButton } from '@/components/ReasonDialogButton';
 import { ReceiveForm } from '@/components/ReceiveForm';
 import { ParcelPhotoInput } from '@/components/ParcelPhotoInput';
@@ -47,7 +48,7 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
     <>
       <PageHead title={t.number} sub={<>{t.source_name} → {t.dest_name}</>}>
         <StatusBadge status={t.status} />
-        {t.dispatched_at && <Link href={`/transfers/${t.id}/slip`} className="btn" target="_blank">Delivery Challan</Link>}
+        {t.dispatched_at && <ChallanButtons transferId={t.id} />}
       </PageHead>
 
       {t.status === 'awaiting_approval' && (

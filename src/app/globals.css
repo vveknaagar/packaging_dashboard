@@ -592,6 +592,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 
 .slip { --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-width: 860px; margin: 0 auto; padding: 24px; background: #fff; color: var(--ink); min-height: 100dvh; font-size: 0.92rem; }
 .slip-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 20px; }
+.slip-actions-end { display: flex; flex-wrap: wrap; gap: 8px; }
 .slip h2 { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 8px; }
 .slip-code { font-family: var(--mono); font-size: 0.86em; }
 
@@ -609,7 +610,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .slip-status-discrepancy { background: var(--warn-soft); color: var(--warn); }
 .slip-status-rejected { background: var(--crit-soft); color: var(--crit-ink); }
 
-.slip-parties { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; margin-bottom: 26px; }
+.slip-parties { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; margin-bottom: 26px; }
 .slip-party { padding: 16px 18px; line-height: 1.5; }
 .slip-party + .slip-party { border-left: 1px solid var(--line-strong); }
 .slip-party-name { margin-bottom: 4px; }
@@ -617,14 +618,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .slip-address { white-space: pre-line; }
 .slip-gstin { margin-top: 6px; }
 .slip-contact { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong); }
-.slip-transport { background: var(--subtle); }
-.slip-transport dl { margin: 0; }
-.slip-transport dt { color: var(--muted); font-size: 0.84rem; }
-.slip-transport dd { margin: 0 0 10px; }
 
-.slip-certificate { text-align: center; margin: 0 0 24px; }
-.slip-certificate h2 { font-size: 1rem; font-weight: 800; letter-spacing: 0.04em; color: var(--ink); margin-bottom: 10px; }
-.slip-certificate p { margin: 0 auto; max-width: 680px; line-height: 1.6; }
 
 .slip-table-wrap { overflow-x: auto; margin-bottom: 18px; }
 .slip-table { width: 100%; border-collapse: collapse; }
@@ -649,10 +643,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .slip-declaration li { margin-bottom: 3px; }
 .slip-declaration p { margin: 0; }
 
-.slip-signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 80px; }
+.slip-signs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px; margin-top: 80px; }
 .slip-signs > div { border-top: 2px solid var(--ink); padding-top: 8px; }
 .slip-signs h2 { margin-bottom: 4px; color: var(--ink-2); }
-.slip-placeholder { color: var(--muted); }
 
 @media screen and (max-width: 640px) {
   .slip { padding: 14px; }
@@ -666,12 +659,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 @media print {
   body { background: #fff; }
   .no-print { display: none !important; }
-  .slip { padding: 0; max-width: none; min-height: 0; }
+  /* No page margin, so the browser prints no date, title or URL round the page; the slip pads itself instead. */
+  .slip { padding: 12mm; max-width: none; min-height: 0; }
   .slip-table-wrap { overflow: visible; }
   /* Keep the dark value box and tinted panels when printed. */
-  .slip-value, .slip-transport, .slip-status { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slip-value, .slip-status { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .slip-table tr, .slip-signs, .slip-value { break-inside: avoid; }
-  @page { margin: 14mm; }
+  @page { size: A4; margin: 0; }
 }
 
 .span-all { grid-column: 1 / -1; }

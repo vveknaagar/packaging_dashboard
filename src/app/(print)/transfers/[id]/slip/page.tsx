@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { DownloadChallan } from '@/components/DownloadChallan';
 import { PrintButton } from '@/components/PrintButton';
 import { canViewTransfer } from '@/lib/permissions';
 import { getLines, getTransfer, STATUS_LABELS } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
-import { TRANSPORT_MODES } from '@/lib/transport';
 import { fmtDate, fmtMoney, fmtNum, parseId } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Delivery Challan' };
@@ -28,7 +28,10 @@ function splitName(name: string): { main: string; sub: string } {
   return { main: name.replace(/\s*\([^)]*\)/g, '').trim() || name, sub: parts.join(' · ') };
 }
 
-/** A print-ready page. "Print / Save as PDF" in the browser produces the delivery challan. */
+/**
+ * The delivery challan, to print or download as a PDF.
+ * Opened with ?download=1 (in a hidden frame on the transfer page), it saves the PDF straight away.
+ */
 export default async function TransferSlipPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const id = parseId((await params).id);
@@ -46,13 +49,6 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
   const totalUnit = units.size === 1 ? [...units][0] : '';
   const challanDate = fmtDate(t.dispatched_at) || '—';
 
-  // Where the parcel is going and how, for the certificate line.
-  const destPlace = [t.dest_city, [t.dest_state, t.dest_pincode].filter(Boolean).join(' ')].filter(Boolean).join(', ')
-    || t.dest_address.split('\n').at(-1) || placeName(t.dest_name);
-  const carrier = t.partner_name
-    ? `through ${t.partner_name}`
-    : `by ${(TRANSPORT_MODES[t.transport_mode] ?? 'own arrangement').replace(/^By /i, '').toLowerCase()}`;
-
   const party = (role: string, name: string, code: string, address: string, gstin: string, contact: string | null, phone: string | null) => (
     <div className="slip-party">
       <h2>{role}</h2>
@@ -68,7 +64,10 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
     <div className="slip">
       <div className="slip-actions no-print">
         <Link href={`/transfers/${t.id}`} className="btn btn-ghost">Back to transfer</Link>
-        <PrintButton />
+        <div className="slip-actions-end">
+          <PrintButton />
+          <DownloadChallan fileName={`Delivery Challan ${t.number}.pdf`} />
+        </div>
       </div>
 
       <header className="slip-head">
@@ -89,23 +88,6 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
       <section className="slip-parties">
         {party('From', t.source_name, t.source_code, t.source_address, t.source_gstin, t.source_contact, t.source_phone)}
         {party('Deliver to', t.dest_name, t.dest_code, t.dest_address, t.dest_gstin, t.dest_contact, t.dest_phone)}
-        <div className="slip-party slip-transport">
-          <h2>Transport</h2>
-          <dl>
-            <dt>Delivery challan date</dt>
-            <dd>{challanDate}</dd>
-            <dt>Logistic partner</dt>
-            <dd>{t.partner_name ? `${t.partner_name}${t.partner_phone ? ` · ${t.partner_phone}` : ''}` : 'Own arrangement'}</dd>
-            {t.transport_ref && <><dt>Vehicle / LR / docket</dt><dd>{t.transport_ref}</dd></>}
-          </dl>
-        </div>
-      </section>
-
-      <section className="slip-certificate">
-        <h2>TO WHOMSOEVER IT MAY CONCERN</h2>
-        <p>
-          This is to certify that we, {COMPANY}, are dispatching the following material to <strong>{destPlace}</strong> {carrier}.
-        </p>
       </section>
 
       <div className="slip-table-wrap">
@@ -186,10 +168,6 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
         <div>
           <h2>Dispatched by</h2>
           <div>{t.dispatched_by_name ?? ''}</div>
-        </div>
-        <div>
-          <h2>Carried by</h2>
-          <div className="slip-placeholder">Name &amp; signature</div>
         </div>
         <div>
           <h2>Received by</h2>
