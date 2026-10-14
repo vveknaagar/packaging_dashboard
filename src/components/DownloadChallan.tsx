@@ -30,28 +30,45 @@ async function saveChallanPdf(fileName: string) {
   await document.fonts.ready;
 
   const scale = 2;
+  let blocks: { start: number; end: number }[] = [];
   const canvas = await html2canvas(slip, {
     scale,
     backgroundColor: '#ffffff',
     windowWidth: 1000,
     // The buttons stay off the paper; the watermark is laid on each page below.
     ignoreElements: (el) => el.classList.contains('no-print') || el.classList.contains('slip-watermark'),
+    // Measure the rows in the copy that is drawn: without the buttons, everything sits higher than on screen.
+    onclone: (_doc, el) => {
+      const top = el.getBoundingClientRect().top;
+      blocks = [...el.querySelectorAll<HTMLElement>(KEEP_WHOLE)].map((b) => {
+        const r = b.getBoundingClientRect();
+        return { start: Math.floor((r.top - top) * scale), end: Math.ceil((r.bottom - top) * scale) };
+      });
+    },
   });
 
-  // Page breaks: as many canvas pixels as fit on a page, moved up to the top of any row they would cut.
+  // A row of pixels with nothing on it but the white background, where a page can end without cutting text.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  const isBlank = (y: number) => {
+    const row = ctx.getImageData(0, y, canvas.width, 1).data;
+    for (let i = 0; i < row.length; i += 4) if (row[i] < 245 || row[i + 1] < 245 || row[i + 2] < 245) return false;
+    return true;
+  };
+
+  // Page breaks: as many canvas pixels as fit on a page, moved up to the top of any row they would cut,
+  // then up to the nearest blank line.
   const pxPerMm = canvas.width / (PAGE_W - 2 * MARGIN);
   const pageHeightPx = Math.floor((PAGE_H - 2 * MARGIN) * pxPerMm);
-  const top = slip.getBoundingClientRect().top;
-  const blocks = [...slip.querySelectorAll<HTMLElement>(KEEP_WHOLE)].map((el) => {
-    const r = el.getBoundingClientRect();
-    return { start: Math.round((r.top - top) * scale), end: Math.round((r.bottom - top) * scale) };
-  });
   const breaks = [0];
   while (canvas.height - breaks.at(-1)! > pageHeightPx) {
     const from = breaks.at(-1)!;
     let cut = from + pageHeightPx;
     const split = blocks.find((b) => b.start > from && b.start < cut && b.end > cut);
     if (split) cut = split.start;
+    const floor = from + Math.floor(pageHeightPx / 2);
+    let y = cut;
+    while (y > floor && !isBlank(y)) y--;
+    if (y > floor) cut = y;
     breaks.push(cut);
   }
   breaks.push(canvas.height);
