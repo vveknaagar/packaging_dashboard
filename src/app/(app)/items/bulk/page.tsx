@@ -1,15 +1,20 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BulkStockForm } from '@/components/BulkStockForm';
 import { BulkUploadForm } from '@/components/BulkUploadForm';
 import { Forbidden, PageHead } from '@/components/ui';
+import { get } from '@/lib/db';
 import { isSuper } from '@/lib/permissions';
 import { requireUser } from '@/lib/session';
+import { transferableItems } from '@/lib/transfer-form-data';
 
 export const metadata: Metadata = { title: 'Bulk upload items' };
 
 export default async function BulkUploadPage() {
   const user = await requireUser();
   if (!isSuper(user)) return <Forbidden />;
+  const warehouse = (await get<{ id: number; name: string }>("SELECT id, name FROM locations WHERE type = 'warehouse'"))!;
+  const items = await transferableItems(warehouse.id);
 
   return (
     <>
@@ -37,6 +42,7 @@ export default async function BulkUploadPage() {
           <p className="hint">Nothing is imported at this step. You will see every row with any errors, then choose to import the valid rows.</p>
         </section>
       </div>
+      <BulkStockForm warehouseName={warehouse.name} items={items} />
     </>
   );
 }

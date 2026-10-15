@@ -101,6 +101,46 @@ export async function adjust({ user, itemId, locationId, mode, qty, reason }: Ad
   });
 }
 
+interface StockInManyInput {
+  user: SessionUser;
+  locationId: number;
+  lines: SaleLine[];
+  reason: unknown;
+}
+
+/**
+ * Stock In for many items at once, all together or not at all.
+ * Returns each item with its quantity before and after.
+ */
+export async function stockInMany({ user, locationId, lines, reason }: StockInManyInput) {
+  if (!canEditStock(user, locationId)) throw new ForbiddenError('You can only change stock at your own location.');
+  const why = clean(reason, 300);
+  if (!why) throw new AppError('A reason is required for every stock change.');
+  const adds: { itemId: number; qty: number }[] = [];
+  for (const line of lines) {
+    const qty = parseQty(line.qty);
+    if (qty === null || qty === 0) throw new AppError('Each quantity must be a whole number greater than zero.');
+    if (adds.some((a) => a.itemId === line.itemId)) throw new AppError('An item is listed twice.');
+    adds.push({ itemId: line.itemId, qty });
+  }
+  if (adds.length === 0) throw new AppError('Choose at least one item and the quantity to add.');
+
+  return tx(async () => {
+    const location = await get<{ active: number }>('SELECT active FROM locations WHERE id = ?', locationId);
+    if (!location) throw new NotFoundError('Location not found.');
+    if (!location.active) throw new AppError('This location is inactive.');
+    const done: { itemId: number; qty: number; before: number; after: number }[] = [];
+    for (const a of adds) {
+      const item = await get<{ active: number; name: string; size: string }>('SELECT active, name, size FROM items WHERE id = ?', a.itemId);
+      if (!item) throw new NotFoundError('Item not found.');
+      if (!item.active) throw new AppError(`${item.name} (${item.size}) is deactivated, so stock cannot be added.`);
+      const result = await changeStock({ itemId: a.itemId, locationId, delta: a.qty, type: 'stock_in', reason: `${why} ${onBehalfNote(user)}`.trim(), userId: user.id });
+      done.push({ ...a, ...result });
+    }
+    return done;
+  });
+}
+
 export interface SaleLine {
   itemId: number;
   qty: unknown;

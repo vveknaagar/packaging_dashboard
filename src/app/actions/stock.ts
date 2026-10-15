@@ -2,7 +2,7 @@
 
 import { runAction } from '@/lib/action';
 import { audit, itemLabel } from '@/lib/audit';
-import { all, get } from '@/lib/db';
+import { all, get, warehouseId } from '@/lib/db';
 import { config } from '@/lib/config';
 import { AppError } from '@/lib/errors';
 import * as stock from '@/lib/services/stock';
@@ -44,6 +44,22 @@ export async function adjustStockAction(formData: FormData): Promise<ActionResul
     await audit(user, mode === 'in' ? 'stock_in' : mode === 'out' ? 'stock_out' : 'stock_set', await itemLabel(itemId),
       `${location?.name ?? ''}: ${fmtNum(result.before)} → ${fmtNum(result.after)}. Reason: ${field(formData, 'reason') || '(none)'}`);
     return { ok: `Stock updated: ${result.before} to ${result.after}.` };
+  });
+}
+
+/** Bulk Stock In at the warehouse from the Bulk upload page: lines arrive as qty_<itemId> = quantity to add. */
+export async function bulkStockInAction(formData: FormData): Promise<ActionResult> {
+  return runAction(['super_admin'], async (user) => {
+    const locationId = await warehouseId();
+    const added = await stock.stockInMany({ user, locationId, lines: linesFrom(formData), reason: rawField(formData, 'reason') });
+    const location = await get<{ name: string }>('SELECT name FROM locations WHERE id = ?', locationId);
+    const reason = field(formData, 'reason');
+    for (const a of added) {
+      await audit(user, 'stock_in', await itemLabel(a.itemId),
+        `${location?.name ?? ''}: ${fmtNum(a.before)} → ${fmtNum(a.after)}. Reason: ${reason || '(none)'}`);
+    }
+    const units = added.reduce((sum, a) => sum + a.qty, 0);
+    return { ok: `Added ${fmtNum(units)} unit(s) to ${added.length} item(s) at ${location?.name ?? 'the warehouse'}.` };
   });
 }
 
