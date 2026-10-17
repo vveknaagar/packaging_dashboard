@@ -1,4 +1,6 @@
 export type Role = 'super_admin' | 'warehouse_admin' | 'store_admin';
+/** Edit can change what the role allows; View sees the same screens read-only. The Super Admin always has Edit. */
+export type Access = 'edit' | 'view';
 export type LocationType = 'warehouse' | 'store';
 export type TransferStatus = 'draft' | 'awaiting_approval' | 'approved' | 'declined' | 'dispatched' | 'completed' | 'discrepancy' | 'rejected' | 'cancelled';
 export type LedgerType = 'stock_in' | 'stock_out' | 'sale' | 'adjustment' | 'transfer_out' | 'transfer_in' | 'transfer_return';
@@ -9,6 +11,7 @@ export interface SessionUser {
   name: string;
   username: string;
   role: Role;
+  access: Access;
   location_id: number | null;
   location_name: string | null;
   location_type: LocationType | null;
@@ -51,6 +54,7 @@ export interface UserRow {
   username: string;
   password_hash: string;
   role: Role;
+  access: Access;
   location_id: number | null;
   phone: string;
   active: number;

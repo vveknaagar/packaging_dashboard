@@ -6,7 +6,8 @@ import { get, now, run } from '@/lib/db';
 import * as locations from '@/lib/services/locations';
 import * as logistics from '@/lib/services/logistics';
 import * as users from '@/lib/services/users';
-import type { ActionResult, LocationRow } from '@/lib/types';
+import { ACCESS_LABELS } from '@/lib/permissions';
+import type { Access, ActionResult, LocationRow } from '@/lib/types';
 import { field, parseId, rawField, requireId } from '@/lib/util';
 
 /* ---------- locations ---------- */
@@ -97,12 +98,12 @@ export async function setPartnerStatusAction(formData: FormData): Promise<Action
 
 /* ---------- users ---------- */
 
-const USER_FIELDS = { name: 'Name', phone: 'Phone', role: 'Role', location: 'Location', status: 'Status' };
+const USER_FIELDS = { name: 'Name', phone: 'Phone', role: 'Role', access: 'Access', location: 'Location', status: 'Status' };
 async function userSnapshot(id: number) {
-  const u = await get<{ name: string; username: string; phone: string; role: string; active: number; location: string | null }>(
-    `SELECT u.name, u.username, u.phone, u.role, u.active, l.name AS location
+  const u = await get<{ name: string; username: string; phone: string; role: string; access: Access; active: number; location: string | null }>(
+    `SELECT u.name, u.username, u.phone, u.role, u.access, u.active, l.name AS location
      FROM users u LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = ?`, id);
-  return u && { ...u, role: roleLabel(u.role), status: u.active ? 'Active' : 'Inactive' };
+  return u && { ...u, role: roleLabel(u.role), access: ACCESS_LABELS[u.access], status: u.active ? 'Active' : 'Inactive' };
 }
 
 export async function saveUserAction(formData: FormData): Promise<ActionResult> {
@@ -116,6 +117,7 @@ export async function saveUserAction(formData: FormData): Promise<ActionResult> 
         name: rawField(formData, 'name'),
         phone: rawField(formData, 'phone'),
         role: rawField(formData, 'role'),
+        access: field(formData, 'access'),
         locationId,
         active: field(formData, 'active') === '1',
         password,
@@ -130,11 +132,12 @@ export async function saveUserAction(formData: FormData): Promise<ActionResult> 
       username: rawField(formData, 'username'),
       phone: rawField(formData, 'phone'),
       role: rawField(formData, 'role'),
+      access: field(formData, 'access'),
       locationId,
       password: rawField(formData, 'password'),
     });
     const created = (await userSnapshot(newId))!;
-    await audit(user, 'user_created', `${created.name} (${created.username})`, [created.role, created.location].filter(Boolean).join(' · '));
+    await audit(user, 'user_created', `${created.name} (${created.username})`, [created.role, created.access, created.location].filter(Boolean).join(' · '));
     return { ok: 'User created.', redirectTo: '/users' };
   });
 }

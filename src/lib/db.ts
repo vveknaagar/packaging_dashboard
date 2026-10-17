@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS users (
 -- When the user finished or skipped the first-login tour. Empty until then, so they see it once.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tour_done_at text;
 
+-- Edit: can change what their role allows. View: sees the same screens but cannot change anything.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS access text NOT NULL DEFAULT 'edit' CHECK (access IN ('edit','view'));
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id    integer NOT NULL REFERENCES users(id),

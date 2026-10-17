@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { saveUserAction } from '@/app/actions/admin';
-import type { Role } from '@/lib/types';
+import type { Access, Role } from '@/lib/types';
 import { ActionForm, SubmitButton } from './ActionForm';
 import { NameInput } from './NameInput';
 
 interface Props {
   stores: { id: number; name: string; code: string; active: number }[];
   /** Present when editing. */
-  user?: { id: number; name: string; username: string; phone: string; role: Role; location_id: number | null; active: number };
+  user?: { id: number; name: string; username: string; phone: string; role: Role; access: Access; location_id: number | null; active: number };
   /** Editing your own account: role and status are locked. */
   isSelf?: boolean;
   /** A new user starts with no role chosen unless the link that opened the form asked for one. */
@@ -64,6 +64,16 @@ export function UserForm({ stores, user, isSelf, defaultRole, defaultStoreId }: 
               {stores.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.code}){s.active ? '' : ' (inactive)'}</option>)}
             </select>
             {stores.length === 0 && <span className="hint">No stores yet. Add a store first.</span>}
+          </label>
+        )}
+        {role && role !== 'super_admin' && (
+          <label className="field">
+            <span>Access</span>
+            <select name="access" defaultValue={user?.access ?? 'edit'}>
+              <option value="edit">Edit: can make changes</option>
+              <option value="view">View only: can see, cannot change</option>
+            </select>
+            <span className="hint">View only sees the same screens as this role but cannot change stock, transfers or anything else.</span>
           </label>
         )}
         <label className="field">

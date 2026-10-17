@@ -27,7 +27,7 @@ interface SessionRow {
 type UserLookup = Omit<SessionUser, 'switched_from'> & { active: number };
 
 const loadUser = (id: number) => get<UserLookup>(
-  `SELECT u.id, u.name, u.username, u.role, u.location_id, u.active,
+  `SELECT u.id, u.name, u.username, u.role, u.access, u.location_id, u.active,
           l.name AS location_name, l.type AS location_type
    FROM users u LEFT JOIN locations l ON l.id = u.location_id
    WHERE u.id = ?`, id);
@@ -45,7 +45,7 @@ export const getUser = cache(async (): Promise<SessionUser | null> => {
   const session = await get<SessionRow & { owner: UserLookup | null }>(
     `SELECT s.user_id, s.acting_as, s.expires, s.created_at,
             (SELECT row_to_json(o) FROM (
-               SELECT u.id, u.name, u.username, u.role, u.location_id, u.active,
+               SELECT u.id, u.name, u.username, u.role, u.access, u.location_id, u.active,
                       l.name AS location_name, l.type AS location_type
                FROM users u LEFT JOIN locations l ON l.id = u.location_id
                WHERE u.id = s.user_id) o) AS owner
@@ -77,6 +77,7 @@ export const getUser = cache(async (): Promise<SessionUser | null> => {
     name: row.name,
     username: row.username,
     role: row.role,
+    access: row.access,
     location_id: row.location_id,
     location_name: row.location_name,
     location_type: row.location_type,

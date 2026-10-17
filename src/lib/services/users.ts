@@ -3,7 +3,7 @@ import { AppError, ForbiddenError, NotFoundError } from '../errors';
 import { hashPassword } from '../passwords';
 import { isSuper } from '../permissions';
 import { capitalizeFirst } from '../text';
-import type { LocationRow, Role, SessionUser, UserRow } from '../types';
+import type { Access, LocationRow, Role, SessionUser, UserRow } from '../types';
 import { clean } from '../util';
 
 const USERNAME_RULE = /^[a-z0-9._-]{3,40}$/;
@@ -24,6 +24,11 @@ function assertSuper(user: SessionUser) {
 function parseRole(value: unknown): Role {
   if (!ROLES.includes(value as Role)) throw new AppError('Choose a role.');
   return value as Role;
+}
+
+/** The Super Admin always has Edit access; anyone else is Edit unless View only is chosen. */
+function parseAccess(role: Role, value: unknown): Access {
+  return role !== 'super_admin' && value === 'view' ? 'view' : 'edit';
 }
 
 /** A Warehouse Admin always belongs to the warehouse; a Store Admin to exactly one store. */
@@ -53,15 +58,17 @@ export interface UserInput {
   username: unknown;
   phone: unknown;
   role: unknown;
+  /** 'edit' or 'view'. Ignored for a Super Admin. */
+  access?: unknown;
   locationId: number | null;
   password: string;
 }
 
 /** Insert a user row. The caller has already checked who is allowed to do this. */
-export function insertUser(name: string, username: string, passwordHash: string, role: Role, locationId: number | null, phone = ''): Promise<number> {
+export function insertUser(name: string, username: string, passwordHash: string, role: Role, locationId: number | null, phone = '', access: Access = 'edit'): Promise<number> {
   return insert(
-    'INSERT INTO users (name, username, password_hash, role, location_id, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    name, username, passwordHash, role, locationId, phone, now());
+    'INSERT INTO users (name, username, password_hash, role, access, location_id, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    name, username, passwordHash, role, access, locationId, phone, now());
 }
 
 export async function createUser(actor: SessionUser, input: UserInput): Promise<number> {
@@ -74,7 +81,7 @@ export async function createUser(actor: SessionUser, input: UserInput): Promise<
   const hash = await hashPassword(input.password);
   return tx(async () => {
     await assertUsernameFree(username);
-    return insertUser(name, username, hash, role, await resolveLocation(role, input.locationId), phone);
+    return insertUser(name, username, hash, role, await resolveLocation(role, input.locationId), phone, parseAccess(role, input.access));
   });
 }
 
@@ -82,6 +89,8 @@ export interface UserUpdate {
   name: unknown;
   phone: unknown;
   role: unknown;
+  /** 'edit' or 'view'. Ignored for a Super Admin. */
+  access?: unknown;
   locationId: number | null;
   active: boolean;
   /** Empty string keeps the current password. */
@@ -102,8 +111,8 @@ export async function updateUser(actor: SessionUser, id: number, input: UserUpda
       throw new AppError('You cannot change your own role or deactivate your own account.');
     }
     const locationId = await resolveLocation(role, input.locationId);
-    await run('UPDATE users SET name = ?, phone = ?, role = ?, location_id = ?, active = ? WHERE id = ?',
-      name, phone, role, locationId, input.active ? 1 : 0, id);
+    await run('UPDATE users SET name = ?, phone = ?, role = ?, access = ?, location_id = ?, active = ? WHERE id = ?',
+      name, phone, role, parseAccess(role, input.access), locationId, input.active ? 1 : 0, id);
     if (hash) await run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
     if (!await get("SELECT 1 FROM users WHERE role = 'super_admin' AND active = 1")) {
       throw new AppError('There must always be at least one active Super Admin.');

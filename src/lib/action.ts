@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { AppError } from './errors';
+import { canChange } from './permissions';
 import { getUser, setFlash } from './session';
 import type { ActionResult, Role, SessionUser } from './types';
 
@@ -26,6 +27,8 @@ export async function runAction(
     const user = await getUser();
     if (!user) return { error: 'Your session has ended. Please sign in again.' };
     if (roles && !roles.includes(user.role)) return { error: 'You do not have permission to do that.' };
+    // Every role-restricted action changes something; View only users cannot.
+    if (roles && !canChange(user)) return { error: 'You have view-only access, so you cannot make changes.' };
     outcome = await work(user);
   } catch (err) {
     if (err instanceof AppError) return { error: err.message };

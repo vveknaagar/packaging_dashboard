@@ -3,9 +3,9 @@ import Link from 'next/link';
 import { switchUserAction } from '@/app/actions/auth';
 import { ActiveBadge, Forbidden, PageHead } from '@/components/ui';
 import { all } from '@/lib/db';
-import { isSuper, ROLE_LABELS } from '@/lib/permissions';
+import { ACCESS_LABELS, isSuper, ROLE_LABELS } from '@/lib/permissions';
 import { requireUser } from '@/lib/session';
-import type { Role } from '@/lib/types';
+import type { Access, Role } from '@/lib/types';
 import { fmtDate } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Users' };
@@ -16,6 +16,7 @@ interface UserListRow {
   username: string;
   phone: string;
   role: Role;
+  access: Access;
   active: number;
   created_at: string;
   location_name: string | null;
@@ -26,7 +27,7 @@ export default async function UsersPage() {
   if (!isSuper(user)) return <Forbidden />;
 
   const users = await all<UserListRow>(
-    `SELECT u.id, u.name, u.username, u.phone, u.role, u.active, u.created_at, l.name AS location_name
+    `SELECT u.id, u.name, u.username, u.phone, u.role, u.access, u.active, u.created_at, l.name AS location_name
      FROM users u LEFT JOIN locations l ON l.id = u.location_id
      ORDER BY u.active DESC, CASE u.role WHEN 'super_admin' THEN 0 WHEN 'warehouse_admin' THEN 1 ELSE 2 END, u.name`);
 
@@ -43,6 +44,7 @@ export default async function UsersPage() {
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Role</th>
+                <th>Access</th>
                 <th>Location</th>
                 <th>Added</th>
                 <th>Status</th>
@@ -58,6 +60,7 @@ export default async function UsersPage() {
                   </td>
                   <td data-label="Phone">{u.phone || <span className="muted">—</span>}</td>
                   <td data-label="Role">{ROLE_LABELS[u.role]}</td>
+                  <td data-label="Access">{u.role === 'super_admin' || u.access === 'edit' ? ACCESS_LABELS.edit : <span className="badge badge-off">{ACCESS_LABELS.view}</span>}</td>
                   <td data-label="Location">{u.location_name ?? <span className="muted">All locations</span>}</td>
                   <td data-label="Added">{fmtDate(u.created_at)}</td>
                   <td data-label="Status"><ActiveBadge active={u.active} /></td>

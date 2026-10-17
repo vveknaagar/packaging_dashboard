@@ -20,7 +20,7 @@ import { field, parseId, rawField } from '@/lib/util';
 /** The user as the audit log records them, for screens that run before a session exists. */
 async function auditUser(id: number): Promise<SessionUser | null> {
   return (await get<SessionUser>(
-    `SELECT u.id, u.name, u.username, u.role, u.location_id, l.name AS location_name, l.type AS location_type
+    `SELECT u.id, u.name, u.username, u.role, u.access, u.location_id, l.name AS location_name, l.type AS location_type
      FROM users u LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = ?`, id)) ?? null;
 }
 

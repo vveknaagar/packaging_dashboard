@@ -49,7 +49,7 @@ let pngBuffer: Buffer;
 
 async function loadUser(id: number): Promise<SessionUser> {
   return (await db.get<SessionUser>(
-    `SELECT u.id, u.name, u.username, u.role, u.location_id, l.name AS location_name, l.type AS location_type
+    `SELECT u.id, u.name, u.username, u.role, u.access, u.location_id, l.name AS location_name, l.type AS location_type
      FROM users u LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = ?`, id))!;
 }
 
@@ -650,6 +650,22 @@ describe('users', () => {
     assert.equal(await checkPassword('correct horse', row.password_hash), true);
     assert.equal(await checkPassword('wrong', row.password_hash), false);
     assert.equal(await checkPassword('anything', undefined), false);
+  });
+
+  test('a View only user sees their location but cannot change stock or transfers; the Super Admin is always Edit', async () => {
+    const id = await users.createUser(superAdmin, { name: 'Viewer', username: 'viewer', phone: '', role: 'store_admin', access: 'view', locationId: storeA.location_id, password: 'pw' });
+    const viewer = await loadUser(id);
+    assert.equal(viewer.access, 'view');
+    assert.equal(perms.canViewLocation(viewer, storeA.location_id!), true);
+    assert.equal(perms.canEditStock(viewer, storeA.location_id!), false);
+    assert.equal(perms.canCreateTransfer(viewer), false);
+    await assert.rejects(stock.adjust({ user: viewer, itemId: boxId, locationId: storeA.location_id!, mode: 'in', qty: '1', reason: 'x' }), isAppError(/own location/));
+
+    // Switching back to Edit gives the changes back; a Super Admin cannot be made View only.
+    await users.updateUser(superAdmin, id, { name: 'Viewer', phone: '', role: 'store_admin', access: 'edit', locationId: storeA.location_id, active: true, password: '' });
+    assert.equal(perms.canEditStock(await loadUser(id), storeA.location_id!), true);
+    const rootId = await users.createUser(superAdmin, { name: 'Root two', username: 'root2', phone: '', role: 'super_admin', access: 'view', locationId: null, password: 'pw' });
+    assert.equal((await loadUser(rootId)).access, 'edit');
   });
 });
 

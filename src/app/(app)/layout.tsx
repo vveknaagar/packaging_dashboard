@@ -1,7 +1,7 @@
 import { Shell, type NavItem } from '@/components/Shell';
 import { all, get } from '@/lib/db';
 import { tourFor } from '@/lib/guide';
-import { canSwitchUsers, ROLE_LABELS } from '@/lib/permissions';
+import { canChange, canSwitchUsers, ROLE_LABELS } from '@/lib/permissions';
 import { pendingApprovals, transfersToApprove } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
 import type { Role } from '@/lib/types';
@@ -67,7 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <Shell
       nav={NAV[user.role]}
       userName={user.name}
-      roleLabel={ROLE_LABELS[user.role]}
+      roleLabel={`${ROLE_LABELS[user.role]}${canChange(user) ? '' : ' · View only'}`}
       locationName={user.location_name}
       unread={unread}
       pending={pending.length}

@@ -3,7 +3,7 @@ import { changePasswordAction } from '@/app/actions/auth';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { PageHead } from '@/components/ui';
 import { get } from '@/lib/db';
-import { ROLE_LABELS } from '@/lib/permissions';
+import { canChange, ROLE_LABELS } from '@/lib/permissions';
 import { requireUser } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'My account' };
@@ -21,7 +21,7 @@ export default async function AccountPage() {
             <dt>Name</dt><dd>{user.name}</dd>
             <dt>Username</dt><dd>{user.username}</dd>
             <dt>Phone</dt><dd>{phone || '—'}</dd>
-            <dt>Role</dt><dd>{ROLE_LABELS[user.role]}</dd>
+            <dt>Role</dt><dd>{ROLE_LABELS[user.role]}{canChange(user) ? '' : ' · View only'}</dd>
             <dt>Location</dt><dd>{user.location_name ?? 'All locations'}</dd>
           </dl>
           <p className="hint">To change your name, phone, role or location, ask the Super Admin.</p>
