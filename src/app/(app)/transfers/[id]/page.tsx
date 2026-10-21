@@ -48,7 +48,7 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
     <>
       <PageHead title={t.number} sub={<>{t.source_name} → {t.dest_name}</>}>
         <StatusBadge status={t.status} />
-        {t.dispatched_at && <ChallanButtons transferId={t.id} initialAmount={priceInput(t.challan_amount_paise)} canSetAmount={asSource} />}
+        {t.dispatched_at && <ChallanButtons transferId={t.id} initialAmount={priceInput(t.challan_amount_paise)} initialQty={t.challan_qty ? String(t.challan_qty) : ''} canSetAmount={asSource} />}
       </PageHead>
 
       {t.status === 'awaiting_approval' && (

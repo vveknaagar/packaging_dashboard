@@ -9,8 +9,9 @@ import { Modal } from './Modal';
 
 interface Props {
   transferId: number;
-  /** The amount already on the challan, as rupees for the input. Empty until it is first set. */
+  /** The amount and quantity already on the challan, as text for the inputs. Empty until first set. */
   initialAmount: string;
+  initialQty: string;
   /** Only the sending side is asked for the amount; everyone else goes straight to the challan. */
   canSetAmount: boolean;
 }
@@ -22,18 +23,20 @@ type Intent = 'preview' | 'download';
  * the challan is for (at most ₹49,000); it is saved on the transfer, then the challan opens.
  * Downloading loads the challan in a hidden frame, which saves the PDF and reports back.
  */
-export function ChallanButtons({ transferId, initialAmount, canSetAmount }: Props) {
+export function ChallanButtons({ transferId, initialAmount, initialQty, canSetAmount }: Props) {
   const router = useRouter();
   const href = `/transfers/${transferId}/slip`;
   const [intent, setIntent] = useState<Intent | null>(null);
   const [amount, setAmount] = useState(initialAmount);
+  const [qty, setQty] = useState(initialQty);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  // Rupees, optionally with paise, from 1 up to 49,000.
+  // Rupees, optionally with paise, from 1 up to 49,000; the quantity a whole number of 1 or more.
   const n = /^\d+(\.\d{1,2})?$/.test(amount.trim()) ? Number(amount.trim()) : NaN;
   const invalid = amount.trim() !== '' && (Number.isNaN(n) || n <= 0 || n > 49_000);
-  const ready = amount.trim() !== '' && !invalid;
+  const qtyInvalid = qty.trim() !== '' && !/^[1-9]\d*$/.test(qty.trim());
+  const ready = amount.trim() !== '' && !invalid && qty.trim() !== '' && !qtyInvalid;
 
   useEffect(() => {
     if (!busy) return;
@@ -94,7 +97,15 @@ export function ChallanButtons({ transferId, initialAmount, canSetAmount }: Prop
             />
             {invalid && <span className="field-error" role="alert">Enter rupees from 1 up to 49,000.</span>}
           </label>
-          <p className="hint">Printed on the challan as the consignment value. It cannot exceed ₹49,000.</p>
+          <label className="field">
+            <span>Quantity on the challan</span>
+            <input
+              name="qty" type="number" inputMode="numeric" required min={1} step={1} maxLength={9}
+              value={qty} onChange={(e) => setQty(e.target.value)} placeholder="e.g. 500"
+            />
+            {qtyInvalid && <span className="field-error" role="alert">Enter a whole number of 1 or more.</span>}
+          </label>
+          <p className="hint">Printed as one line, &ldquo;Store Packaging Material&rdquo;, with this quantity and amount. The amount cannot exceed ₹49,000.</p>
           <div className="form-actions">
             <button type="button" className="btn btn-ghost" onClick={() => setIntent(null)}>Cancel</button>
             <SubmitButton pendingLabel="Saving…" disabled={!ready}>

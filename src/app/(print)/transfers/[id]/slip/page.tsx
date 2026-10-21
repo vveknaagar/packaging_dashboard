@@ -6,7 +6,7 @@ import { PrintButton } from '@/components/PrintButton';
 import { canViewTransfer } from '@/lib/permissions';
 import { getTransfer, STATUS_LABELS } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
-import { fmtDate, fmtMoney, parseId } from '@/lib/util';
+import { fmtDate, fmtMoney, fmtNum, parseId } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Delivery Challan' };
 
@@ -83,13 +83,15 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
             <tr>
               <th>#</th>
               <th>Description of goods</th>
+              <th className="num">Qty</th>
               <th className="num">Amount ₹</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td className="slip-index">1</td>
-              <td>Packaging material</td>
+              <td>Store Packaging Material</td>
+              <td className="num">{t.challan_qty === null ? '—' : fmtNum(t.challan_qty)}</td>
               <td className="num">{challanValue === null ? '—' : amount(challanValue)}</td>
             </tr>
           </tbody>
@@ -103,7 +105,7 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
 
       {challanValue === null && (
         <p className="slip-small no-print">
-          No amount has been set yet. Use Preview or Download Delivery Challan on the transfer page and enter the amount (up to ₹49,000).
+          No amount has been set yet. Use Preview or Download Delivery Challan on the transfer page and enter the quantity and amount (up to ₹49,000).
         </p>
       )}
 

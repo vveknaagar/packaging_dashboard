@@ -90,8 +90,9 @@ export interface TransferRow {
   /** Photo of the packed parcel, required at dispatch. Empty on older transfers. */
   parcel_image: string;
   parcel_thumb: string;
-  /** The amount printed on the delivery challan, set by the sender when the challan is made. */
+  /** The amount and quantity printed on the delivery challan, set by the sender when the challan is made. */
   challan_amount_paise: number | null;
+  challan_qty: number | null;
 }
 
 export interface TransferDetail extends TransferRow {

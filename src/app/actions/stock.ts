@@ -186,10 +186,10 @@ export async function dispatchTransferAction(formData: FormData): Promise<Action
 export async function setChallanAmountAction(formData: FormData): Promise<ActionResult> {
   return runAction([...STOCK_ROLES], async (user) => {
     const id = requireId(rawField(formData, 'id'), 'transfer');
-    const paise = await transfers.setChallanAmount(user, id, rawField(formData, 'amount'));
+    const saved = await transfers.setChallanAmount(user, id, rawField(formData, 'amount'), rawField(formData, 'qty'));
     const info = await transferInfo(id);
-    await audit(user, 'challan_amount_set', info.number, `${info.route} · Challan amount: ${fmtMoney(paise)}`);
-    return { ok: `Challan amount set to ${fmtMoney(paise)}.` };
+    await audit(user, 'challan_amount_set', info.number, `${info.route} · Challan: ${fmtNum(saved.qty)} × Store Packaging Material, ${fmtMoney(saved.paise)}`);
+    return { ok: `Challan set to ${fmtMoney(saved.paise)} for ${fmtNum(saved.qty)} unit(s).` };
   });
 }
 

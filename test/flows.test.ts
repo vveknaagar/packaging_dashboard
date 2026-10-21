@@ -855,19 +855,25 @@ describe('GSTIN', () => {
 describe('challan amount', () => {
   test('the sender sets the amount the challan is made for, at most 49,000 rupees', async () => {
     const draft = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: false });
-    await assert.rejects(transfers.setChallanAmount(whAdmin, draft, '100'), isAppError(/dispatched/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, draft, '100', '10'), isAppError(/dispatched/));
 
     const id = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
-    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '49000.01'), isAppError(/49,000/));
-    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '50000'), isAppError(/49,000/));
-    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '0'), isAppError(/rupees/));
-    await assert.rejects(transfers.setChallanAmount(whAdmin, id, 'lots'), isAppError(/rupees/));
-    await assert.rejects(transfers.setChallanAmount(storeB, id, '100'), isAppError(/sending location/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '49000.01', '10'), isAppError(/49,000/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '50000', '10'), isAppError(/49,000/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '0', '10'), isAppError(/rupees/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, 'lots', '10'), isAppError(/rupees/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '100', '0'), isAppError(/whole number/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '100', '2.5'), isAppError(/whole number/));
+    await assert.rejects(transfers.setChallanAmount(storeB, id, '100', '10'), isAppError(/sending location/));
 
-    await transfers.setChallanAmount(whAdmin, id, '49000');
-    assert.equal((await transfers.getTransfer(id))!.challan_amount_paise, 4_900_000);
-    // Asking again with a new figure replaces it, so a reprint shows the latest amount.
-    await transfers.setChallanAmount(whAdmin, id, '12500.50');
-    assert.equal((await transfers.getTransfer(id))!.challan_amount_paise, 1_250_050);
+    await transfers.setChallanAmount(whAdmin, id, '49000', '500');
+    let t = (await transfers.getTransfer(id))!;
+    assert.equal(t.challan_amount_paise, 4_900_000);
+    assert.equal(t.challan_qty, 500);
+    // Asking again with new figures replaces them, so a reprint shows the latest challan.
+    await transfers.setChallanAmount(whAdmin, id, '12500.50', '250');
+    t = (await transfers.getTransfer(id))!;
+    assert.equal(t.challan_amount_paise, 1_250_050);
+    assert.equal(t.challan_qty, 250);
   });
 });

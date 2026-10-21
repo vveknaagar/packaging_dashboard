@@ -451,10 +451,10 @@ export async function dispatch({ user, id, parcelPhoto }: { user: SessionUser; i
 export const MAX_CHALLAN_PAISE = 49_000 * 100;
 
 /**
- * The amount the challan is made out for, asked of the sender each time the challan
- * is previewed or downloaded. Stored on the transfer so reprints show the same figure.
+ * The amount and quantity the challan is made out for, asked of the sender each time the
+ * challan is previewed or downloaded. Stored on the transfer so reprints show the same figures.
  */
-export async function setChallanAmount(user: SessionUser, id: number, value: unknown): Promise<number> {
+export async function setChallanAmount(user: SessionUser, id: number, value: unknown, qty: unknown): Promise<{ paise: number; qty: number }> {
   let paise: number | null;
   try {
     paise = parsePrice(value);
@@ -463,13 +463,15 @@ export async function setChallanAmount(user: SessionUser, id: number, value: unk
   }
   if (!paise) throw new AppError('Enter the challan amount in rupees, for example 45000.');
   if (paise > MAX_CHALLAN_PAISE) throw new AppError('The challan amount cannot exceed ₹49,000.');
+  const n = parseQty(qty);
+  if (!n) throw new AppError('Enter the challan quantity as a whole number greater than zero.');
   return tx(async () => {
     const transfer = await get<TransferRow>('SELECT * FROM transfers WHERE id = ?', id);
     if (!transfer) throw new NotFoundError('Transfer not found.');
     if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the sending location sets the challan amount.');
     if (!transfer.dispatched_at) throw new AppError('The challan exists once the transfer is dispatched.');
-    await run('UPDATE transfers SET challan_amount_paise = ? WHERE id = ?', paise, id);
-    return paise;
+    await run('UPDATE transfers SET challan_amount_paise = ?, challan_qty = ? WHERE id = ?', paise, n, id);
+    return { paise, qty: n };
   });
 }
 
