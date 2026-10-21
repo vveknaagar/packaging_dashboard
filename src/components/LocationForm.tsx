@@ -29,10 +29,10 @@ export function LocationForm({ location }: { location?: LocationRow }) {
           <label className="field">
             <span>GSTIN{isStore ? '' : ' (optional)'}</span>
             <input
-              name="gstin" type="text" required={isStore} maxLength={15} minLength={15}
-              pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][1-9A-Za-z][Zz][0-9A-Za-z]"
+              name="gstin" type="text" required={isStore} maxLength={15} minLength={14}
+              pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][1-9A-Za-z][Zz][0-9A-Za-z]|[0-9]{2}[0-9A-Za-z]{12}"
               defaultValue={location?.gstin} autoCapitalize="characters" placeholder="24ABCDE1234F1Z5"
-              title="15-character GSTIN, for example 24ABCDE1234F1Z5"
+              title="14 or 15-character GSTIN, for example 24ABCDE1234F1Z5"
             />
             <span className="hint">Printed on delivery challans.</span>
           </label>

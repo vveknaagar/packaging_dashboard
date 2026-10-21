@@ -85,16 +85,16 @@ export async function savePricingAction(formData: FormData): Promise<ActionResul
   return runAction(['super_admin'], async (user) => {
     const rows = new Map<number, items.PricingInput>();
     for (const [key, value] of formData.entries()) {
-      const match = /^(hsn|price)_(\d{1,9})$/.exec(key);
+      const match = /^(hsn|price|min)_(\d{1,9})$/.exec(key);
       if (!match) continue;
       const id = Number(match[2]);
       const row = rows.get(id) ?? { id, hsn: '', price: '' };
-      row[match[1] as 'hsn' | 'price'] = value;
+      row[match[1] as 'hsn' | 'price' | 'min'] = value;
       rows.set(id, row);
     }
     const ids = [...rows.keys()];
-    type Price = Pick<ItemRow, 'id' | 'name' | 'size' | 'hsn' | 'price_paise'>;
-    const snapshot = async () => new Map((await all<Price>(`SELECT id, name, size, hsn, price_paise FROM items WHERE id IN (${ids.map(() => '?').join(', ')})`, ...ids)).map((r) => [r.id, r]));
+    type Price = Pick<ItemRow, 'id' | 'name' | 'size' | 'hsn' | 'price_paise' | 'min_stock'>;
+    const snapshot = async () => new Map((await all<Price>(`SELECT id, name, size, hsn, price_paise, min_stock FROM items WHERE id IN (${ids.map(() => '?').join(', ')})`, ...ids)).map((r) => [r.id, r]));
     const before = ids.length ? await snapshot() : new Map<number, Price>();
     const changed = await items.savePricing(user, [...rows.values()]);
     if (changed) {
@@ -102,7 +102,10 @@ export async function savePricingAction(formData: FormData): Promise<ActionResul
       const lines = [...after.values()].flatMap((a) => {
         const b = before.get(a.id);
         if (!b) return [];
-        const diff = changes({ hsn: b.hsn, price: money(b.price_paise) }, { hsn: a.hsn, price: money(a.price_paise) }, { hsn: 'HSN', price: 'Price' });
+        const diff = changes(
+          { hsn: b.hsn, price: money(b.price_paise), min: String(b.min_stock) },
+          { hsn: a.hsn, price: money(a.price_paise), min: String(a.min_stock) },
+          { hsn: 'HSN', price: 'Price', min: 'Min stock' });
         return diff ? [`${a.name} (${a.size}): ${diff}`] : [];
       });
       await audit(user, 'pricing_changed', `${changed} item(s)`, lines.join('\n'));

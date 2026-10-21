@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   },
   description: 'Packaging material stock and transfers across the warehouse and stores.',
   robots: { index: false, follow: false },
+  // Added to an iPhone home screen, the app opens full screen under this name.
+  appleWebApp: { capable: true, title: 'Mayave', statusBarStyle: 'default' },
 };
 
 export const viewport: Viewport = {

@@ -31,8 +31,11 @@ function assertSuper(user: SessionUser) {
   if (!isSuper(user)) throw new ForbiddenError('Only the Super Admin can manage locations.');
 }
 
-/** 15 characters: state code, PAN, entity number, Z, check character. */
-const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+/**
+ * The usual 15 characters (state code, PAN, entity number, Z, check character), or a
+ * 14-character number some states issue: a 2-digit state code then 12 letters or digits.
+ */
+const GSTIN_PATTERN = /^(\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]|\d{2}[0-9A-Z]{12})$/;
 
 /** A store must have an address, city, state, PIN code and GSTIN; for the warehouse they are optional. */
 function validate(input: LocationInput, type: LocationType) {
@@ -51,7 +54,7 @@ function validate(input: LocationInput, type: LocationType) {
   if (type === 'store' && !pincode) throw new AppError('PIN code is required for a store.');
   if (pincode && !/^\d{6}$/.test(pincode)) throw new AppError('PIN code must be 6 digits.');
   if (type === 'store' && !gstin) throw new AppError('GSTIN is required for a store.');
-  if (gstin && !GSTIN_PATTERN.test(gstin)) throw new AppError('GSTIN must be 15 characters, for example 24ABCDE1234F1Z5.');
+  if (gstin && !GSTIN_PATTERN.test(gstin)) throw new AppError('GSTIN must be 14 or 15 characters, for example 24ABCDE1234F1Z5.');
   return { name, code, address, city, state, pincode, gstin };
 }
 

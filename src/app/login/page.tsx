@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { connection } from 'next/server';
 import { loginAction } from '@/app/actions/auth';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
+import { PasswordInput } from '@/components/PasswordInput';
 import { getUser, hasAnyUser } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Sign in' };
@@ -30,7 +31,7 @@ export default async function LoginPage() {
           </label>
           <label className="field">
             <span>Password</span>
-            <input name="password" type="password" required autoComplete="current-password" />
+            <PasswordInput name="password" required autoComplete="current-password" />
           </label>
           <SubmitButton className="btn btn-primary btn-block" pendingLabel="Signing in…">Sign in</SubmitButton>
         </ActionForm>

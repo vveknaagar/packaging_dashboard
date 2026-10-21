@@ -137,7 +137,7 @@ describe('locations', () => {
     await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '' }, null), isAppError(/GSTIN is required/));
     await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: '', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/City is required/));
     await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '3950', gstin: '24ABCDE1234F1Z5' }, null), isAppError(/6 digits/));
-    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: 'NOT-A-GSTIN' }, null), isAppError(/15 characters/));
+    await assert.rejects(locations.createStore(superAdmin, { name: 'X', code: 'X1', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: 'NOT-A-GSTIN' }, null), isAppError(/14 or 15 characters/));
     // Lower case and spaces are tidied up.
     const id = await locations.createStore(superAdmin, { name: 'Surat', code: 'su', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24abcde1234f1z5 ' }, null);
     assert.deepEqual(await db.get('SELECT code, gstin FROM locations WHERE id = ?', id), { code: 'SU', gstin: '24ABCDE1234F1Z5' });
@@ -807,5 +807,47 @@ describe('logistic partners', () => {
     await logistics.setPartnerStatus(superAdmin, blueDart, false);
     await assert.rejects(send(String(blueDart)), isAppError(/from the list/));
     assert.equal((await transfers.getTransfer(id))!.partner_name, 'Blue Dart');
+  });
+});
+
+describe('low stock', () => {
+  test('a Min stock alerts once as warehouse stock crosses it, and lists the item as Running low', async () => {
+    const wh = whAdmin.location_id!;
+    const tape = (await db.get<{ hsn: string; price_paise: number | null }>('SELECT hsn, price_paise FROM items WHERE id = ?', tapeId))!;
+    const price = tape.price_paise === null ? '' : String(tape.price_paise / 100);
+    await assert.rejects(items.savePricing(superAdmin, [{ id: tapeId, hsn: tape.hsn, price, min: 'lots' }]), isAppError(/whole number/));
+
+    await stock.stockInMany({ user: whAdmin, locationId: wh, lines: [{ itemId: tapeId, qty: '10' }], reason: 'Purchase received' });
+    const start = await stock.getQty(tapeId, wh);
+    await items.savePricing(superAdmin, [{ id: tapeId, hsn: tape.hsn, price, min: String(start - 1) }]);
+    assert.ok(!(await stock.runningLow()).some((r) => r.id === tapeId), 'above the minimum is not low');
+
+    const alerts = () => db.get<{ n: number }>("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND message LIKE 'Running low: Tape%'", whAdmin.id).then((r) => r!.n);
+    const out = () => stock.adjust({ user: whAdmin, itemId: tapeId, locationId: wh, mode: 'out', qty: '1', reason: 'Used for orders' });
+    await out();
+    assert.equal(await alerts(), 1, 'crossing the minimum alerts the warehouse');
+    await out();
+    assert.equal(await alerts(), 1, 'staying below it does not alert again');
+    assert.ok((await stock.runningLow()).some((r) => r.id === tapeId));
+  });
+
+  test('bulk Stock In adds every line together, or none when one is wrong', async () => {
+    const wh = whAdmin.location_id!;
+    const box = await stock.getQty(boxId, wh);
+    const tape = await stock.getQty(tapeId, wh);
+    await stock.stockInMany({ user: superAdmin, locationId: wh, lines: [{ itemId: boxId, qty: '5' }, { itemId: tapeId, qty: '3' }], reason: 'Opening stock' });
+    assert.equal(await stock.getQty(boxId, wh), box + 5);
+    assert.equal(await stock.getQty(tapeId, wh), tape + 3);
+    await assert.rejects(stock.stockInMany({ user: superAdmin, locationId: wh, lines: [{ itemId: boxId, qty: '5' }, { itemId: tapeId, qty: '0' }], reason: 'x' }), isAppError(/greater than zero/));
+    assert.equal(await stock.getQty(boxId, wh), box + 5, 'nothing was added');
+    await assert.rejects(stock.stockInMany({ user: storeA, locationId: wh, lines: [{ itemId: boxId, qty: '1' }], reason: 'x' }), isAppError(/own location/));
+  });
+});
+
+describe('GSTIN', () => {
+  test('a 14-character GSTIN is accepted as well as the usual 15', async () => {
+    const id = await locations.createStore(superAdmin, { name: 'Fourteen', code: 'G14', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24abcde1234f1z' }, null);
+    assert.equal((await db.get<{ gstin: string }>('SELECT gstin FROM locations WHERE id = ?', id))!.gstin, '24ABCDE1234F1Z');
+    await assert.rejects(locations.createStore(superAdmin, { name: 'Thirteen', code: 'G13', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1' }, null), isAppError(/14 or 15/));
   });
 });

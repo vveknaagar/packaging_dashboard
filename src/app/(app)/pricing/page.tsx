@@ -76,12 +76,13 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
                     <th>Item</th>
                     <th>HSN code</th>
                     <th>Price per unit (₹)</th>
+                    <th>Min stock (warehouse)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
                     // Keyed on the saved values so a fresh page load shows what was stored.
-                    <tr key={`${item.id}-${item.hsn}-${item.price_paise}`}>
+                    <tr key={`${item.id}-${item.hsn}-${item.price_paise}-${item.min_stock}`}>
                       <td className="cell-main">
                         <ItemCell name={item.name} size={item.size} thumb={item.thumb} image={item.image} />
                       </td>
@@ -99,13 +100,20 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
                           aria-label={`Price for ${item.name} ${item.size}`} title="Rupees, for example 12.50"
                         />
                       </td>
+                      <td data-label="Min stock (warehouse)">
+                        <input
+                          name={`min_${item.id}`} type="text" inputMode="numeric" maxLength={9} pattern="[0-9]*"
+                          defaultValue={item.min_stock || ''} placeholder="No alert" className="price-input"
+                          aria-label={`Minimum warehouse stock for ${item.name} ${item.size}`} title="Whole number. Blank or 0 means no alert."
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="form-actions">
-              <span className="muted">Changes apply to transfers dispatched from now on. Delivery challans of transfers already dispatched keep their price.</span>
+              <span className="muted">Price changes apply to transfers dispatched from now on; challans already dispatched keep their price. When warehouse stock falls to the Min stock or below, the item shows as Running low.</span>
               <SubmitButton pendingLabel="Saving…">Save changes</SubmitButton>
             </div>
           </>

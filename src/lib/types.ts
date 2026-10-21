@@ -43,6 +43,8 @@ export interface ItemRow {
   hsn: string;
   /** Price per unit in paise. Null until the Super Admin sets one. */
   price_paise: number | null;
+  /** Warehouse stock at or below this is Running low. 0 means no alert. */
+  min_stock: number;
   active: number;
   created_at: string;
   updated_at: string;

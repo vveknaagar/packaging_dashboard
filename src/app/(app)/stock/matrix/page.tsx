@@ -6,7 +6,8 @@ import { all, get } from '@/lib/db';
 import { isStore } from '@/lib/permissions';
 import { requireUser } from '@/lib/session';
 import type { LocationRow } from '@/lib/types';
-import { fmtNum, likePattern, paginate, param } from '@/lib/util';
+import { MATRIX_LOCATIONS_SQL, matrixFilter } from '@/lib/stock-queries';
+import { fmtNum, paginate, param } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Stock matrix' };
 
@@ -29,19 +30,10 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const q = param(sp.q).trim();
 
-  const where = ['(i.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.item_id = i.id AND s.qty > 0))'];
-  const params: (string | number)[] = [];
-  if (q) {
-    where.push("(i.name LIKE ? ESCAPE '\\' OR i.size LIKE ? ESCAPE '\\')");
-    params.push(likePattern(q), likePattern(q));
-  }
-  const whereSql = `WHERE ${where.join(' AND ')}`;
+  const { whereSql, params } = matrixFilter(q);
   // Independent lookups go to the database together rather than one after another.
   const [locations, totalRow] = await Promise.all([
-    all<LocationRow>(
-      `SELECT l.* FROM locations l
-       WHERE l.active = 1 OR EXISTS (SELECT 1 FROM stock s WHERE s.location_id = l.id AND s.qty > 0)
-       ORDER BY (l.type = 'warehouse') DESC, l.name`),
+    all<LocationRow>(MATRIX_LOCATIONS_SQL),
     get<{ n: number }>(`SELECT COUNT(*) AS n FROM items i ${whereSql}`, ...params),
   ]);
   const pager = paginate(totalRow!.n, param(sp.page), PAGE_SIZE);
@@ -65,6 +57,7 @@ export default async function StockMatrixPage({ searchParams }: { searchParams: 
     <>
       <PageHead title="Stock matrix" sub="Every item against every location.">
         <Link href="/stock" className="btn">Stock by location</Link>
+        <a href={`/api/stock/matrix/export${q ? `?${new URLSearchParams({ q })}` : ''}`} className="btn" download>Download Excel</a>
       </PageHead>
 
       <Form action="/stock/matrix" className="toolbar card">

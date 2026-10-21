@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Empty, PageHead, StatusBadge } from '@/components/ui';
 import { all, get } from '@/lib/db';
 import { canCreateTransfer, isStore, isSuper } from '@/lib/permissions';
-import { LEDGER_LABELS } from '@/lib/services/stock';
+import { LEDGER_LABELS, runningLow } from '@/lib/services/stock';
 import { requireUser } from '@/lib/session';
 import type { LedgerType, SessionUser, TransferStatus } from '@/lib/types';
 import { fmtDateTime, fmtNum } from '@/lib/util';
@@ -235,7 +235,7 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
   // Independent lookups go to the database together rather than one after another.
   // The Super Admin sees stock value store by store; a Warehouse Admin, like a Store Admin, only for their own location.
   const storeWise = isSuper(user);
-  const [totals, byLocation, pending, toApprove, activity, ownValues] = await Promise.all([
+  const [totals, byLocation, pending, toApprove, activity, ownValues, low] = await Promise.all([
     get<{ items: number; units: number }>(
       'SELECT (SELECT COUNT(*) FROM items WHERE active = 1) AS items, (SELECT COALESCE(SUM(qty), 0) FROM stock) AS units'),
     all<LocationStock>(
@@ -252,6 +252,7 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
     all<TransferSummary>(`${TRANSFER_SUMMARY_SQL} WHERE t.status = 'awaiting_approval' ORDER BY t.id`),
     recentActivity(null, 8),
     !storeWise && user.location_id ? itemValues(user.location_id) : null,
+    runningLow(),
   ]);
   const totalItems = totals!.items;
   const totalStock = totals!.units;
@@ -275,6 +276,7 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
         <Tile label="Total stock" value={fmtNum(totalStock)} note="units across all locations" href="/stock/matrix" />
         {showValue && <Tile label="Stock value" value={rupees(totalValue)} note={`${rupees(storeValue)} of it in stores`} href="/pricing" />}
         {ownValues && <Tile label="Stock value" value={rupees(ownValue)} note={`of the stock at ${user.location_name}`} href="/stock" />}
+        <Tile label="Running low" value={fmtNum(low.length)} note={low.length ? 'item(s) at or below minimum in the warehouse' : 'nothing below its minimum'} href="/stock?view=low" />
         <Tile label="Transfers in transit" value={fmtNum(pending.length)} note={`${fmtNum(inTransitUnits)} unit(s) on the way`} href="/transfers?view=all&status=dispatched" />
       </div>
       <div className="grid-2">
@@ -318,6 +320,23 @@ async function AdminDashboard({ user }: { user: SessionUser }) {
                 {fmtNum(unpriced)} unit(s) have no price yet and are not counted. <Link href="/pricing?missing=1">Set prices</Link>
               </p>
             )}
+          </section>
+        )}
+        {low.length > 0 && (
+          <section className="card card-pending span-all">
+            <div className="card-head"><h2>Running low in the warehouse</h2><Link href="/stock?view=low">View all</Link></div>
+            <ul className="row-list">
+              {low.slice(0, 8).map((r) => (
+                <li key={r.id} className="activity">
+                  <Link href={`/stock/items/${r.id}`} className="row-title">{r.name} <span className="muted">· {r.size}</span></Link>
+                  <div className="activity-qty">
+                    <strong className={r.qty === 0 ? 'text-crit' : undefined}>{fmtNum(r.qty)}</strong>
+                    <span className="muted">min {fmtNum(r.min_stock)}{r.unit ? ` ${r.unit}` : ''}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {low.length > 8 && <p className="hint">and {low.length - 8} more item(s).</p>}
           </section>
         )}
         <section className={`card${toApprove.length ? ' card-pending' : ''}${showValue ? ' span-all' : ''}`}>

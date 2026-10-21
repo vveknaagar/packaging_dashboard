@@ -88,6 +88,8 @@ export interface PricingInput {
   hsn: unknown;
   /** Rupees as typed, e.g. "12.50". Blank clears the price. */
   price: unknown;
+  /** Minimum warehouse stock as typed. Blank is 0, no alert. Left out keeps the current value. */
+  min?: unknown;
 }
 
 /** "12.5" or "₹1,200.00" to paise. Blank is null; anything else that is not a price is an error. */
@@ -99,7 +101,7 @@ export function parsePrice(value: unknown): number | null {
   return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
 }
 
-/** Set the HSN code and price of several items at once. Only rows that changed are written. */
+/** Set the HSN code, price and minimum stock of several items at once. Only rows that changed are written. */
 export async function savePricing(user: SessionUser, rows: PricingInput[]): Promise<number> {
   if (!isSuper(user)) throw new ForbiddenError('Only the Super Admin can set prices and HSN codes.');
   return tx(async () => {
@@ -117,8 +119,14 @@ export async function savePricing(user: SessionUser, rows: PricingInput[]): Prom
       } catch (err) {
         throw new AppError(`${item.name} (${item.size}): ${(err as Error).message}`);
       }
-      if (hsn === item.hsn && price === item.price_paise) continue;
-      await run('UPDATE items SET hsn = ?, price_paise = ?, updated_at = ? WHERE id = ?', hsn, price, now(), row.id);
+      let min = item.min_stock;
+      if (row.min !== undefined) {
+        const text = typeof row.min === 'string' ? row.min.trim() : String(row.min ?? '');
+        if (text && !/^\d{1,9}$/.test(text)) throw new AppError(`${item.name} (${item.size}): Min stock must be a whole number, zero or more.`);
+        min = text ? Number(text) : 0;
+      }
+      if (hsn === item.hsn && price === item.price_paise && min === item.min_stock) continue;
+      await run('UPDATE items SET hsn = ?, price_paise = ?, min_stock = ?, updated_at = ? WHERE id = ?', hsn, price, min, now(), row.id);
       changed++;
     }
     return changed;

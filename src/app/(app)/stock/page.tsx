@@ -9,7 +9,8 @@ import { canEditStock, canViewLocation, isStore } from '@/lib/permissions';
 import { inTransit } from '@/lib/services/stock';
 import { requireUser } from '@/lib/session';
 import type { LocationRow } from '@/lib/types';
-import { fmtNum, likePattern, paginate, param, parseId } from '@/lib/util';
+import { stockFilter, type StockView } from '@/lib/stock-queries';
+import { fmtNum, paginate, param, parseId } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Stock' };
 
@@ -24,6 +25,7 @@ interface StockRow {
   image: string;
   active: number;
   qty: number;
+  min_stock: number;
 }
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -39,16 +41,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
   const canEdit = canEditStock(user, location.id) && !!location.active;
   const q = param(sp.q).trim();
-  const view = param(sp.view) === 'instock' ? 'instock' : 'all';
-
-  const where = ['(i.active = 1 OR COALESCE(s.qty, 0) > 0)'];
-  const params: (string | number)[] = [location.id];
-  if (q) {
-    where.push("(i.name LIKE ? ESCAPE '\\' OR i.size LIKE ? ESCAPE '\\')");
-    params.push(likePattern(q), likePattern(q));
-  }
-  if (view === 'instock') where.push('COALESCE(s.qty, 0) > 0');
-  const from = `FROM items i LEFT JOIN stock s ON s.item_id = i.id AND s.location_id = ? WHERE ${where.join(' AND ')}`;
+  // Minimum stock is kept for the warehouse, so only there can items be Running low.
+  const isWarehouse = location.type === 'warehouse';
+  const v = param(sp.view);
+  const view: StockView = v === 'instock' || (v === 'low' && isWarehouse) ? v : 'all';
+  const { from, params } = stockFilter(location.id, isWarehouse, q, view);
 
   // Independent lookups go to the database together rather than one after another.
   const [totalRow, totalsRow, outgoing, locations] = await Promise.all([
@@ -61,7 +58,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const totals = totalsRow!;
   const pager = paginate(totalRow!.n, param(sp.page), PAGE_SIZE);
   const rows = await all<StockRow>(
-    `SELECT i.id, i.name, i.size, i.unit, i.thumb, i.image, i.active, COALESCE(s.qty, 0) AS qty
+    `SELECT i.id, i.name, i.size, i.unit, i.thumb, i.image, i.active, COALESCE(s.qty, 0) AS qty, i.min_stock
      ${from} ORDER BY i.name, i.size LIMIT ? OFFSET ?`,
     ...params, pager.pageSize, pager.offset);
   const filtered = !!q || view !== 'all';
@@ -80,6 +77,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         {canEdit && location.type === 'store' && <Link href={`/stock/sell?location=${location.id}`} className="btn btn-primary">Mark sold</Link>}
         <Link href={`/stock/ledger${locationQuery ? `?location=${locationQuery}` : ''}`} className="btn">Stock ledger</Link>
         {!isStore(user) && <Link href="/stock/matrix" className="btn">Stock matrix</Link>}
+        <a href={`/api/stock/export?${new URLSearchParams({ ...(locationQuery ? { location: String(locationQuery) } : {}), q, view: view === 'all' ? '' : view })}`} className="btn" download>Download Excel</a>
       </PageHead>
 
       <Form action="/stock" className="toolbar card">
@@ -94,6 +92,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <select name="view" defaultValue={view} aria-label="Show">
           <option value="all">All items</option>
           <option value="instock">In stock only</option>
+          {isWarehouse && <option value="low">Running low</option>}
         </select>
         <button type="submit" className="btn">Apply</button>
         {filtered && <Link href={`/stock${locationQuery ? `?location=${locationQuery}` : ''}`} className="btn btn-ghost">Clear</Link>}
@@ -101,7 +100,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
       <div className="card">
         {rows.length === 0 ? (
-          <Empty>{filtered ? 'No items match these filters.' : 'No items have been added yet.'}</Empty>
+          <Empty>{view === 'low' && !q ? 'Nothing is running low. Set a Min stock for items on the Price & HSN screen.' : filtered ? 'No items match these filters.' : 'No items have been added yet.'}</Empty>
         ) : (
           <ul className="item-grid">
             {rows.map((r) => (
@@ -118,6 +117,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                   <strong>{fmtNum(r.qty)}</strong> <span className="muted">{r.unit} in stock</span>
                   {outgoing.get(r.id) ? <div className="muted">{fmtNum(outgoing.get(r.id))} in transit out</div> : null}
                   {!r.active && <div><span className="badge badge-off">Inactive item</span></div>}
+                  {isWarehouse && !!r.active && r.min_stock > 0 && r.qty <= r.min_stock && (
+                    <div><span className="badge badge-low" title={`Minimum is ${r.min_stock}`}>Running low · min {fmtNum(r.min_stock)}</span></div>
+                  )}
                 </div>
                 {canEdit && (
                   <AdjustStockButton

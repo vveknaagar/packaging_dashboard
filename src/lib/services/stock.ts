@@ -52,7 +52,36 @@ export async function changeStock({ itemId, locationId, delta, type, reason, use
     `INSERT INTO stock_ledger (ts, item_id, location_id, user_id, type, qty_change, qty_before, qty_after, reason, transfer_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     now(), itemId, locationId, userId, type, delta, before, after, reason, transferId);
+  if (delta < 0) await alertIfLow(itemId, locationId, before, after);
   return { before, after };
+}
+
+/**
+ * Warehouse stock that has just fallen to the item's minimum or below tells the
+ * Warehouse Admins and Super Admins once, as it crosses the line, not on every change after.
+ */
+async function alertIfLow(itemId: number, locationId: number, before: number, after: number) {
+  const row = await get<{ type: string; location: string; min_stock: number; name: string; size: string; unit: string }>(
+    `SELECT l.type, l.name AS location, i.min_stock, i.name, i.size, i.unit
+     FROM items i, locations l WHERE i.id = ? AND l.id = ?`, itemId, locationId);
+  if (!row || row.type !== 'warehouse' || row.min_stock <= 0) return;
+  if (before <= row.min_stock || after > row.min_stock) return;
+  const message = `Running low: ${row.name} (${row.size}) is down to ${after}${row.unit ? ` ${row.unit}` : ''} at ${row.location}. Minimum is ${row.min_stock}.`;
+  const ts = now();
+  const admins = await all<{ id: number }>("SELECT id FROM users WHERE active = 1 AND role IN ('super_admin', 'warehouse_admin')");
+  for (const a of admins) {
+    await run('INSERT INTO notifications (user_id, ts, message, transfer_id) VALUES (?, ?, ?, NULL)', a.id, ts, message);
+  }
+}
+
+/** Active items whose warehouse stock is at or below their minimum, lowest first compared to it. */
+export function runningLow() {
+  return all<{ id: number; name: string; size: string; unit: string; thumb: string; qty: number; min_stock: number }>(
+    `SELECT i.id, i.name, i.size, i.unit, i.thumb, COALESCE(s.qty, 0) AS qty, i.min_stock
+     FROM items i
+     LEFT JOIN stock s ON s.item_id = i.id AND s.location_id = (SELECT id FROM locations WHERE type = 'warehouse')
+     WHERE i.active = 1 AND i.min_stock > 0 AND COALESCE(s.qty, 0) <= i.min_stock
+     ORDER BY COALESCE(s.qty, 0)::float / i.min_stock, i.name, i.size`);
 }
 
 export type AdjustMode = 'in' | 'out' | 'set';

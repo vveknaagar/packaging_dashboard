@@ -7,7 +7,8 @@ import { isStore } from '@/lib/permissions';
 import { LEDGER_LABELS } from '@/lib/services/stock';
 import { requireUser } from '@/lib/session';
 import type { LedgerType, LocationRow } from '@/lib/types';
-import { fmtDateTime, fmtNum, likePattern, paginate, param, parseId } from '@/lib/util';
+import { ledgerFilter } from '@/lib/stock-queries';
+import { fmtDateTime, fmtNum, paginate, param, parseId } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Stock ledger' };
 
@@ -40,21 +41,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const type = param(sp.type) in LEDGER_LABELS ? (param(sp.type) as LedgerType) : '';
   const q = param(sp.q).trim();
 
-  const where: string[] = [];
-  const params: (string | number)[] = [];
-  if (locationId) { where.push('g.location_id = ?'); params.push(locationId); }
-  if (type) { where.push('g.type = ?'); params.push(type); }
-  if (q) {
-    where.push("(i.name LIKE ? ESCAPE '\\' OR i.size LIKE ? ESCAPE '\\')");
-    params.push(likePattern(q), likePattern(q));
-  }
-  const from = `
-    FROM stock_ledger g
-    JOIN items i ON i.id = g.item_id
-    JOIN locations l ON l.id = g.location_id
-    JOIN users u ON u.id = g.user_id
-    LEFT JOIN transfers t ON t.id = g.transfer_id
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
+  const { from, params } = ledgerFilter(locationId, type, q);
 
   // Independent lookups go to the database together rather than one after another.
   const [totalRow, locations] = await Promise.all([
@@ -72,7 +59,14 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHead title="Stock ledger" sub="Every stock change is recorded here permanently and cannot be edited or deleted." />
+      <PageHead title="Stock ledger" sub="Every stock change is recorded here permanently and cannot be edited or deleted.">
+        <a
+          href={`/api/stock/ledger/export?${new URLSearchParams({ ...(!store && locationId ? { location: String(locationId) } : {}), type, q })}`}
+          className="btn" download
+        >
+          Download Excel
+        </a>
+      </PageHead>
 
       <Form action="/stock/ledger" className="toolbar card">
         {!store && (
