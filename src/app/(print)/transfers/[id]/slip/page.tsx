@@ -126,14 +126,15 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
         {t.receive_remark && <p className="slip-remark"><strong>Receiver remark:</strong> {t.receive_remark}</p>}
         {t.closed_reason && <p className="slip-remark"><strong>{t.status === 'rejected' ? 'Rejection' : 'Cancellation'} reason:</strong> {t.closed_reason}</p>}
 
+        {/* No names are printed: each side signs by hand in the space under its heading. */}
         <section className="slip-signs">
           <div>
             <h2>Dispatched by</h2>
-            <div>{t.dispatched_by_name ?? ''}</div>
+            <div />
           </div>
           <div>
             <h2>Received by</h2>
-            <div>{t.received_by_name ?? ''}</div>
+            <div />
           </div>
         </section>
       </div>
