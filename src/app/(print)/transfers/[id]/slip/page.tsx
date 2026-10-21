@@ -150,17 +150,15 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
       {/* Declaration, remarks and signatures stay together on one page. */}
       <div className="slip-closing">
         <section className="slip-declaration">
-          <h3>We Further Declare That</h3>
+          <h3>Declaration and Terms – Packing Materials</h3>
           <ol>
-            <li>The above material is being sent solely for product packaging purposes and is not intended for sale, resale, or any commercial transaction.</li>
-            <li>The material is being sent on a sample basis.</li>
-            <li>The value declared above is for transit, insurance, and record purposes only, and there is no commercial invoice value involved.</li>
-            <li>All particulars stated above are true and correct to the best of our knowledge.</li>
+            <li>Materials are for internal product packaging use only and not for separate sale or resale.</li>
+            <li>Item details, quantities and values are true and correct to the best of our knowledge. Declared values are for inventory, transit and insurance purposes.</li>
+            <li>The recipient shall verify quantities and condition upon receipt and report any shortage, damage or discrepancy within 24 hours, with photographs where applicable.</li>
+            <li>Receipt shall be acknowledged with the recipient’s name, signature and date. An acknowledged copy shall be shared with the dispatching team.</li>
+            <li>Receipts and consumption shall be recorded in the inventory system, and stock balances reconciled periodically with physical stock.</li>
+            <li>Indian laws shall apply. Disputes shall be subject to the exclusive jurisdiction of the competent courts at Surat, Gujarat.</li>
           </ol>
-          <p>
-            We therefore request the concerned authorities, security, and gate personnel to kindly permit the movement and entry of the
-            above-mentioned material. For any clarification, please contact the undersigned.
-          </p>
         </section>
         {t.note && <p className="slip-remark"><strong>Note:</strong> {t.note}</p>}
         {t.receive_remark && <p className="slip-remark"><strong>Receiver remark:</strong> {t.receive_remark}</p>}
