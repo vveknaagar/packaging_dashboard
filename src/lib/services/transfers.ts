@@ -5,6 +5,7 @@ import type { LocationRow, SessionUser, TransferDetail, TransferEvent, TransferL
 import { TRANSPORT_MODES } from '../transport';
 import { clean, parseQty } from '../util';
 import { processImage, saveProcessed, type ProcessedImage } from './images';
+import { parsePrice } from './items';
 import { partnerForTransfer } from './logistics';
 import * as stock from './stock';
 
@@ -443,6 +444,32 @@ export async function dispatch({ user, id, parcelPhoto }: { user: SessionUser; i
       throw new AppError('This transfer has already been dispatched or closed.');
     }
     await dispatchInTx(transfer, user, photo);
+  });
+}
+
+/** The amount printed on a delivery challan may not exceed this: ₹49,000, in paise. */
+export const MAX_CHALLAN_PAISE = 49_000 * 100;
+
+/**
+ * The amount the challan is made out for, asked of the sender each time the challan
+ * is previewed or downloaded. Stored on the transfer so reprints show the same figure.
+ */
+export async function setChallanAmount(user: SessionUser, id: number, value: unknown): Promise<number> {
+  let paise: number | null;
+  try {
+    paise = parsePrice(value);
+  } catch {
+    throw new AppError('Enter the challan amount in rupees, for example 45000.');
+  }
+  if (!paise) throw new AppError('Enter the challan amount in rupees, for example 45000.');
+  if (paise > MAX_CHALLAN_PAISE) throw new AppError('The challan amount cannot exceed ₹49,000.');
+  return tx(async () => {
+    const transfer = await get<TransferRow>('SELECT * FROM transfers WHERE id = ?', id);
+    if (!transfer) throw new NotFoundError('Transfer not found.');
+    if (!isSourceUser(user, transfer)) throw new ForbiddenError('Only the sending location sets the challan amount.');
+    if (!transfer.dispatched_at) throw new AppError('The challan exists once the transfer is dispatched.');
+    await run('UPDATE transfers SET challan_amount_paise = ? WHERE id = ?', paise, id);
+    return paise;
   });
 }
 

@@ -15,7 +15,7 @@ import { canApproveTransfers, canViewTransfer, isDestUser, isSourceUser } from '
 import { EVENT_LABELS, getEvents, getLines, getTransfer } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
 import { TRANSPORT_MODES } from '@/lib/transport';
-import { fmtDateTime, fmtNum, parseId } from '@/lib/util';
+import { fmtDateTime, fmtNum, parseId, priceInput } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Transfer' };
 
@@ -48,7 +48,7 @@ export default async function TransferDetailPage({ params }: { params: Promise<{
     <>
       <PageHead title={t.number} sub={<>{t.source_name} → {t.dest_name}</>}>
         <StatusBadge status={t.status} />
-        {t.dispatched_at && <ChallanButtons transferId={t.id} />}
+        {t.dispatched_at && <ChallanButtons transferId={t.id} initialAmount={priceInput(t.challan_amount_paise)} canSetAmount={asSource} />}
       </PageHead>
 
       {t.status === 'awaiting_approval' && (

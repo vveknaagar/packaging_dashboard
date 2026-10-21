@@ -40,6 +40,7 @@ export const AUDIT_GROUPS: Record<string, Record<string, string>> = {
     transfer_discrepancy: 'Transfer received with discrepancy',
     transfer_rejected: 'Transfer rejected',
     transfer_cancelled: 'Transfer cancelled',
+    challan_amount_set: 'Challan amount set',
   },
   Setup: {
     location_created: 'Store added',

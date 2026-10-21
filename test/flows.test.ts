@@ -851,3 +851,23 @@ describe('GSTIN', () => {
     await assert.rejects(locations.createStore(superAdmin, { name: 'Thirteen', code: 'G13', address: 'Ring Road', city: 'Surat', state: 'Gujarat', pincode: '395007', gstin: '24ABCDE1234F1' }, null), isAppError(/14 or 15/));
   });
 });
+
+describe('challan amount', () => {
+  test('the sender sets the amount the challan is made for, at most 49,000 rupees', async () => {
+    const draft = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: false });
+    await assert.rejects(transfers.setChallanAmount(whAdmin, draft, '100'), isAppError(/dispatched/));
+
+    const id = await transfers.create({ user: whAdmin, destId: storeA.location_id!, rawLines: [{ itemId: tapeId, qty: '1' }], note: '', transportMode: 'courier', transportRef: '', dispatchNow: true, parcelPhoto: pngBuffer });
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '49000.01'), isAppError(/49,000/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '50000'), isAppError(/49,000/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, '0'), isAppError(/rupees/));
+    await assert.rejects(transfers.setChallanAmount(whAdmin, id, 'lots'), isAppError(/rupees/));
+    await assert.rejects(transfers.setChallanAmount(storeB, id, '100'), isAppError(/sending location/));
+
+    await transfers.setChallanAmount(whAdmin, id, '49000');
+    assert.equal((await transfers.getTransfer(id))!.challan_amount_paise, 4_900_000);
+    // Asking again with a new figure replaces it, so a reprint shows the latest amount.
+    await transfers.setChallanAmount(whAdmin, id, '12500.50');
+    assert.equal((await transfers.getTransfer(id))!.challan_amount_paise, 1_250_050);
+  });
+});

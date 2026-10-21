@@ -8,7 +8,7 @@ import { AppError } from '@/lib/errors';
 import * as stock from '@/lib/services/stock';
 import * as transfers from '@/lib/services/transfers';
 import type { ActionResult } from '@/lib/types';
-import { field, fmtNum, parseId, rawField, requireId } from '@/lib/util';
+import { field, fmtMoney, fmtNum, parseId, rawField, requireId } from '@/lib/util';
 
 // Every role can reach these; the services decide which location each one may act for.
 const STOCK_ROLES = ['super_admin', 'warehouse_admin', 'store_admin'] as const;
@@ -179,6 +179,17 @@ export async function dispatchTransferAction(formData: FormData): Promise<Action
     const info = await transferInfo(id);
     await audit(user, 'transfer_dispatched', info.number, `${info.route} · ${info.list}`);
     return { ok: 'Transfer dispatched. Stock is now in transit.' };
+  });
+}
+
+/** The amount the delivery challan is made out for, asked of the sender before it opens. Capped at ₹49,000. */
+export async function setChallanAmountAction(formData: FormData): Promise<ActionResult> {
+  return runAction([...STOCK_ROLES], async (user) => {
+    const id = requireId(rawField(formData, 'id'), 'transfer');
+    const paise = await transfers.setChallanAmount(user, id, rawField(formData, 'amount'));
+    const info = await transferInfo(id);
+    await audit(user, 'challan_amount_set', info.number, `${info.route} · Challan amount: ${fmtMoney(paise)}`);
+    return { ok: `Challan amount set to ${fmtMoney(paise)}.` };
   });
 }
 

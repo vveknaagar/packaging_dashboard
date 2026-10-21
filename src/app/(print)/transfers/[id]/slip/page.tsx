@@ -4,9 +4,9 @@ import { notFound } from 'next/navigation';
 import { DownloadChallan } from '@/components/DownloadChallan';
 import { PrintButton } from '@/components/PrintButton';
 import { canViewTransfer } from '@/lib/permissions';
-import { getLines, getTransfer, STATUS_LABELS } from '@/lib/services/transfers';
+import { getTransfer, STATUS_LABELS } from '@/lib/services/transfers';
 import { requireUser } from '@/lib/session';
-import { fmtDate, fmtMoney, fmtNum, parseId } from '@/lib/util';
+import { fmtDate, fmtMoney, parseId } from '@/lib/util';
 
 export const metadata: Metadata = { title: 'Delivery Challan' };
 
@@ -22,12 +22,6 @@ function placeName(name: string): string {
 /** Rupees without the sign, for columns headed "Rate ₹" and "Amount ₹". */
 const amount = (paise: number) => fmtMoney(paise).replace('₹', '');
 
-/** "Gift box Large (EVA 4+5) (Sleeve + Card)" shows as "Gift box Large" over "EVA 4+5 · Sleeve + Card". */
-function splitName(name: string): { main: string; sub: string } {
-  const parts = [...name.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim()).filter(Boolean);
-  return { main: name.replace(/\s*\([^)]*\)/g, '').trim() || name, sub: parts.join(' · ') };
-}
-
 /**
  * The delivery challan, to print or download as a PDF.
  * Opened with ?download=1 (in a hidden frame on the transfer page), it saves the PDF straight away.
@@ -38,15 +32,8 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
   const t = id ? await getTransfer(id) : undefined;
   if (!t || !canViewTransfer(user, t) || !t.dispatched_at) notFound();
 
-  const lines = await getLines(t.id);
-  const received = t.status === 'completed' || t.status === 'discrepancy';
-  const totalSent = lines.reduce((n, l) => n + l.qty_sent, 0);
-  const totalReceived = lines.reduce((n, l) => n + (l.qty_received ?? 0), 0);
-  // Value of the goods sent, at the prices frozen on dispatch.
-  const totalValue = lines.reduce((n, l) => n + (l.rate_paise ?? 0) * l.qty_sent, 0);
-  const unpriced = lines.filter((l) => l.rate_paise === null).length;
-  const units = new Set(lines.map((l) => l.unit.toLowerCase()));
-  const totalUnit = units.size === 1 ? [...units][0] : '';
+  // The challan names no individual items: one line, for the amount the sender chose.
+  const challanValue = t.challan_amount_paise;
   const challanDate = fmtDate(t.dispatched_at) || '—';
 
   const party = (role: string, name: string, code: string, address: string, gstin: string, contact: string | null, phone: string | null) => (
@@ -95,57 +82,30 @@ export default async function TransferSlipPage({ params }: { params: Promise<{ i
           <thead>
             <tr>
               <th>#</th>
-              <th>Item</th>
-              <th>Size</th>
-              <th>HSN</th>
-              <th className="num">Sent</th>
-              <th className="num">Rate ₹</th>
+              <th>Description of goods</th>
               <th className="num">Amount ₹</th>
-              <th className="num">Received</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((l, index) => {
-              const { main, sub } = splitName(l.name);
-              const short = received && l.qty_received !== l.qty_sent;
-              return (
-                <tr key={l.id}>
-                  <td className="slip-index">{index + 1}</td>
-                  <td>
-                    <div>{main}</div>
-                    {sub && <div className="slip-sub">{sub}</div>}
-                  </td>
-                  <td className="slip-code">{l.size}</td>
-                  <td className="slip-code">{l.hsn || '—'}</td>
-                  <td className="num">{fmtNum(l.qty_sent)} <span className="slip-unit">{l.unit.toLowerCase()}</span></td>
-                  <td className="num">{l.rate_paise === null ? '—' : amount(l.rate_paise)}</td>
-                  <td className="num">{l.rate_paise === null ? '—' : amount(l.rate_paise * l.qty_sent)}</td>
-                  <td className={`num slip-received${short ? ' differs' : ''}`}>{received ? <>{fmtNum(l.qty_received)}{short ? '' : ' ✓'}</> : ''}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
             <tr>
-              <td />
-              <td colSpan={3}>Total · {lines.length} {lines.length === 1 ? 'item' : 'items'}</td>
-              <td className="num">{fmtNum(totalSent)} <span className="slip-unit">{totalUnit}</span></td>
-              <td />
-              <td className="num">{amount(totalValue)}{unpriced ? ' *' : ''}</td>
-              <td className={`num slip-received${received && totalReceived !== totalSent ? ' differs' : ''}`}>
-                {received ? <>{fmtNum(totalReceived)}{totalReceived === totalSent ? ' ✓' : ''}</> : ''}
-              </td>
+              <td className="slip-index">1</td>
+              <td>Packaging material</td>
+              <td className="num">{challanValue === null ? '—' : amount(challanValue)}</td>
             </tr>
-          </tfoot>
+          </tbody>
         </table>
       </div>
 
       <div className="slip-value">
         <span>Consignment value</span>
-        <strong>{fmtMoney(totalValue)}</strong>
+        <strong>{challanValue === null ? '—' : fmtMoney(challanValue)}</strong>
       </div>
 
-      {unpriced > 0 && <p className="slip-small">* {unpriced} item(s) had no price when dispatched and are not included in the total.</p>}
+      {challanValue === null && (
+        <p className="slip-small no-print">
+          No amount has been set yet. Use Preview or Download Delivery Challan on the transfer page and enter the amount (up to ₹49,000).
+        </p>
+      )}
 
       {/* Declaration, remarks and signatures stay together on one page. */}
       <div className="slip-closing">
